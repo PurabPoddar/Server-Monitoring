@@ -108,22 +108,25 @@ export default function Profile() {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom fontWeight="bold">
-        My Profile
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        View and manage your personal information
-      </Typography>
+    <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, maxWidth: 1400, mx: 'auto' }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom fontWeight="bold" sx={{ mb: 1 }}>
+          My Profile
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          View and manage your personal information
+        </Typography>
+      </Box>
 
       {success && (
-        <Alert severity="success" sx={{ mb: 3 }}>
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess('')}>
           {success}
         </Alert>
       )}
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
@@ -131,17 +134,18 @@ export default function Profile() {
       <Grid container spacing={3}>
         {/* Profile Card */}
         <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Box display="flex" flexDirection="column" alignItems="center" sx={{ py: 3 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box display="flex" flexDirection="column" alignItems="center" sx={{ py: 2 }}>
                 <Avatar
                   sx={{
-                    width: 120,
-                    height: 120,
+                    width: 140,
+                    height: 140,
                     bgcolor: 'primary.main',
-                    fontSize: '3rem',
+                    fontSize: '4rem',
                     fontWeight: 'bold',
-                    mb: 2,
+                    mb: 2.5,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
                   }}
                 >
                   {user.username?.charAt(0).toUpperCase()}
@@ -153,36 +157,36 @@ export default function Profile() {
                   label={user.role || 'user'}
                   color={user.role === 'admin' ? 'error' : 'primary'}
                   icon={user.role === 'admin' ? <AdminIcon /> : <PersonIcon />}
-                  sx={{ mb: 2 }}
+                  sx={{ mb: 2, fontWeight: 600 }}
                 />
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
                   {user.email || 'No email provided'}
                 </Typography>
               </Box>
 
-              <Divider sx={{ my: 2 }} />
+              <Divider sx={{ my: 3 }} />
 
               <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                <Typography variant="subtitle1" fontWeight="600" gutterBottom sx={{ mb: 2 }}>
                   Account Information
                 </Typography>
-                <Box sx={{ mt: 2 }}>
-                  <Box display="flex" alignItems="center" sx={{ mb: 1.5 }}>
-                    <PersonIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Box display="flex" alignItems="flex-start" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                    <PersonIcon fontSize="small" sx={{ mr: 1.5, mt: 0.5, color: 'primary.main' }} />
                     <Box>
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" color="text.secondary" display="block">
                         User ID
                       </Typography>
-                      <Typography variant="body2">{user.id}</Typography>
+                      <Typography variant="body2" fontWeight="500">#{user.id}</Typography>
                     </Box>
                   </Box>
-                  <Box display="flex" alignItems="center">
-                    <EmailIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                  <Box display="flex" alignItems="flex-start" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                    <EmailIcon fontSize="small" sx={{ mr: 1.5, mt: 0.5, color: 'primary.main' }} />
                     <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Email
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Email Address
                       </Typography>
-                      <Typography variant="body2">{user.email || 'Not set'}</Typography>
+                      <Typography variant="body2" fontWeight="500">{user.email || 'Not set'}</Typography>
                     </Box>
                   </Box>
                 </Box>
@@ -193,9 +197,9 @@ export default function Profile() {
 
         {/* Edit Profile Form */}
         <Grid item xs={12} md={8}>
-          <Card>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2} sx={{ mb: 3 }}>
                 <Typography variant="h6" fontWeight="bold">
                   Profile Details
                 </Typography>
@@ -204,16 +208,17 @@ export default function Profile() {
                     variant="contained"
                     startIcon={<EditIcon />}
                     onClick={handleEdit}
+                    sx={{ px: 3 }}
                   >
                     Edit Profile
                   </Button>
                 ) : (
-                  <Box>
+                  <Box display="flex" gap={1}>
                     <Button
                       variant="outlined"
                       startIcon={<CancelIcon />}
                       onClick={handleCancel}
-                      sx={{ mr: 1 }}
+                      color="inherit"
                     >
                       Cancel
                     </Button>
@@ -221,6 +226,7 @@ export default function Profile() {
                       variant="contained"
                       startIcon={<SaveIcon />}
                       onClick={handleSave}
+                      sx={{ px: 3 }}
                     >
                       Save Changes
                     </Button>
@@ -228,7 +234,7 @@ export default function Profile() {
                 )}
               </Box>
 
-              <Divider sx={{ mb: 3 }} />
+              <Divider sx={{ mb: 4 }} />
 
               <Grid container spacing={3}>
                 <Grid item xs={12} sm={6}>
@@ -273,44 +279,80 @@ export default function Profile() {
                 </Grid>
               </Grid>
 
-              <Divider sx={{ my: 3 }} />
+              <Divider sx={{ my: 4 }} />
 
               <Box>
-                <Typography variant="subtitle2" gutterBottom>
+                <Typography variant="h6" fontWeight="600" gutterBottom sx={{ mb: 3 }}>
                   Account Statistics
                 </Typography>
-                <Grid container spacing={2} sx={{ mt: 1 }}>
-                  <Grid item xs={6} sm={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="h4" color="primary" fontWeight="bold">
+                <Grid container spacing={2.5}>
+                  <Grid item xs={12} sm={4}>
+                    <Card 
+                      variant="outlined" 
+                      sx={{ 
+                        height: '100%',
+                        borderColor: 'primary.main',
+                        borderWidth: 2,
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: '0 8px 24px rgba(144, 202, 249, 0.25)',
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                        <Typography variant="h3" color="primary.main" fontWeight="bold" sx={{ mb: 1 }}>
                           {Math.floor(Math.random() * 50) + 10}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="body2" color="text.secondary" fontWeight="500">
                           Servers Managed
                         </Typography>
                       </CardContent>
                     </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="h4" color="success.main" fontWeight="bold">
+                  <Grid item xs={12} sm={4}>
+                    <Card 
+                      variant="outlined" 
+                      sx={{ 
+                        height: '100%',
+                        borderColor: 'success.main',
+                        borderWidth: 2,
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: '0 8px 24px rgba(76, 175, 80, 0.25)',
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                        <Typography variant="h3" color="success.main" fontWeight="bold" sx={{ mb: 1 }}>
                           {Math.floor(Math.random() * 100) + 50}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="body2" color="text.secondary" fontWeight="500">
                           Active Sessions
                         </Typography>
                       </CardContent>
                     </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="h4" color="warning.main" fontWeight="bold">
+                  <Grid item xs={12} sm={4}>
+                    <Card 
+                      variant="outlined" 
+                      sx={{ 
+                        height: '100%',
+                        borderColor: 'warning.main',
+                        borderWidth: 2,
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: '0 8px 24px rgba(255, 152, 0, 0.25)',
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                        <Typography variant="h3" color="warning.main" fontWeight="bold" sx={{ mb: 1 }}>
                           {Math.floor(Math.random() * 20) + 5}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="body2" color="text.secondary" fontWeight="500">
                           Alerts Today
                         </Typography>
                       </CardContent>
