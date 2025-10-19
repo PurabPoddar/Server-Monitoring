@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
 } from "react-router";
 
 import type { Route } from "./+types/root";
@@ -65,6 +66,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  
+  // Routes that should NOT have the MainLayout (navbar/sidebar)
+  const publicRoutes = ['/login', '/register'];
+  const isPublicRoute = publicRoutes.includes(location.pathname);
+
+  // If it's a public route (login/register), render without MainLayout
+  if (isPublicRoute) {
+    return <Outlet />;
+  }
+
+  // Otherwise, render with MainLayout (navbar/sidebar)
   return <MainLayout />;
 }
 
