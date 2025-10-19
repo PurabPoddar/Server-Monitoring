@@ -20,9 +20,11 @@ def create_app() -> Flask:
     with app.app_context():
         from .api.server_routes import server_bp  # noqa: WPS433
         from .api.user_routes import user_bp  # noqa: WPS433
+        from .api.auth_routes import auth_bp  # noqa: WPS433
 
         app.register_blueprint(server_bp, url_prefix="/api")
         app.register_blueprint(user_bp, url_prefix="/api")
+        app.register_blueprint(auth_bp, url_prefix="/api/auth")
 
         db.create_all()
 
