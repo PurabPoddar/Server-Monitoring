@@ -10,6 +10,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeProvider, createTheme, CssBaseline, Container, Typography, Box } from "@mui/material";
+import MainLayout from "./components/MainLayout";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -64,7 +65,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return <MainLayout />;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

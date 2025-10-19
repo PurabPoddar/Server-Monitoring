@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: "http://localhost:5001/api",
   headers: {
     "Content-Type": "application/json",
   },
@@ -12,9 +12,9 @@ export const registerServer = (data: any) => api.post("/servers", data);
 // List servers
 export const fetchServers = () => api.get("/servers");
 // Fetch metrics for a server
-export const fetchServerMetrics = (id: string) => api.get(`/servers/${id}/metrics`);
+export const fetchServerMetrics = (id: string) => api.get(`/servers/${id}/metrics?mock=true`);
 // List users for a server
-export const fetchServerUsers = (id: string) => api.get(`/servers/${id}/users`);
+export const fetchServerUsers = (id: string) => api.get(`/servers/${id}/users?mock=true`);
 // Add user to a server
 export const addServerUser = (id: string, data: any) => api.post(`/servers/${id}/users`, data);
 // Delete user from a server

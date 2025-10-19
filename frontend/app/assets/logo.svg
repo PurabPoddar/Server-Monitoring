@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Server Monitoring Portal Icon</title>
+  <desc id="desc">Square icon of stacked server racks with an ECG pulse and green status indicator.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e6fffb"/>
+      <stop offset="1" stop-color="#ccf7f3"/>
+    </linearGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- square background -->
+  <rect x="16" y="16" width="480" height="480" rx="40" fill="#ffffff" filter="url(#s)"/>
+  <rect x="40" y="40" width="432" height="432" rx="32" fill="url(#g)"/>
+
+  <!-- servers stack -->
+  <g transform="translate(112,110)">
+    <!-- top -->
+    <rect x="0" y="0" rx="14" ry="14" width="288" height="64" fill="#0f172a"/>
+    <rect x="18" y="18" rx="6" ry="6" width="60" height="28" fill="#ffffff" opacity="0.12"/>
+    <rect x="92" y="18" rx="6" ry="6" width="160" height="28" fill="#ffffff" opacity="0.06"/>
+
+    <!-- middle -->
+    <g transform="translate(0,86)">
+      <rect x="0" y="0" rx="14" ry="14" width="288" height="64" fill="#0f172a"/>
+      <rect x="18" y="18" rx="6" ry="6" width="80" height="28" fill="#ffffff" opacity="0.12"/>
+      <rect x="108" y="18" rx="6" ry="6" width="142" height="28" fill="#ffffff" opacity="0.06"/>
+    </g>
+
+    <!-- bottom -->
+    <g transform="translate(0,172)">
+      <rect x="0" y="0" rx="14" ry="14" width="288" height="64" fill="#0f172a"/>
+      <rect x="18" y="18" rx="6" ry="6" width="48" height="28" fill="#ffffff" opacity="0.12"/>
+      <rect x="84" y="18" rx="6" ry="6" width="184" height="28" fill="#ffffff" opacity="0.06"/>
+    </g>
+  </g>
+
+  <!-- ECG pulse overlay -->
+  <g transform="translate(128,224)">
+    <path d="M8 0 L44 0 L62 -20 L88 24 L118 -12 L152 12 L188 -28 L230 0 L248 0"
+          fill="none" stroke="#06b6d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- status dot -->
+  <circle cx="384" cy="352" r="26" fill="#22c55e" stroke="#fff" stroke-width="6"/>
+</svg>
