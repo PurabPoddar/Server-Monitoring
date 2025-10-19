@@ -76,8 +76,12 @@ export default function MainLayout() {
 
   const handleProfile = () => {
     handleMenuClose();
-    // Navigate to profile page (you can create this later)
-    // navigate('/profile');
+    navigate('/profile');
+  };
+
+  const handleSettings = () => {
+    handleMenuClose();
+    navigate('/settings');
   };
 
   return (
@@ -237,7 +241,7 @@ export default function MainLayout() {
           </ListItemIcon>
           My Profile
         </MenuItem>
-        <MenuItem onClick={handleProfile}>
+        <MenuItem onClick={handleSettings}>
           <ListItemIcon>
             <SettingsIcon fontSize="small" />
           </ListItemIcon>
