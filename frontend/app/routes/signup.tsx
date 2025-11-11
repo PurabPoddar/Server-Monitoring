@@ -13,36 +13,68 @@ import {
   Link as MuiLink,
   CircularProgress,
 } from '@mui/material';
-import { Visibility, VisibilityOff, Lock, Person } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Lock, Person, Email } from '@mui/icons-material';
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     username: '',
+    email: '',
     password: '',
+    confirmPassword: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+    setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validation
+    if (!formData.username || !formData.email || !formData.password) {
+      setError('All fields are required');
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5001/api/auth/login', {
+      const response = await fetch('http://localhost:5001/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
+        throw new Error(data.message || 'Registration failed');
       }
 
       // Store authentication token (client-side only)
@@ -54,17 +86,10 @@ export default function Login() {
       // Redirect to dashboard
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Failed to login. Please try again.');
+      setError(err.message || 'Failed to register. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
   };
 
   return (
@@ -100,13 +125,13 @@ export default function Login() {
                 mb: 2,
               }}
             >
-              <Lock sx={{ fontSize: 40, color: 'white' }} />
+              <Person sx={{ fontSize: 40, color: 'white' }} />
             </Box>
-            <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-              Server Monitoring
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
+              Create Account
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Sign in to access your monitoring dashboard
+              Sign up to get started with Server Monitoring
             </Typography>
           </Box>
 
@@ -117,7 +142,7 @@ export default function Login() {
             </Alert>
           )}
 
-          {/* Login Form */}
+          {/* Sign Up Form */}
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
@@ -125,14 +150,31 @@ export default function Login() {
               name="username"
               value={formData.username}
               onChange={handleChange}
+              margin="normal"
               required
-              autoComplete="username"
               autoFocus
-              sx={{ mb: 2 }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Person color="action" />
+                    <Person />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              margin="normal"
+              required
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Email />
                   </InputAdornment>
                 ),
               }}
@@ -145,13 +187,12 @@ export default function Login() {
               type={showPassword ? 'text' : 'password'}
               value={formData.password}
               onChange={handleChange}
+              margin="normal"
               required
-              autoComplete="current-password"
-              sx={{ mb: 3 }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Lock color="action" />
+                    <Lock />
                   </InputAdornment>
                 ),
                 endAdornment: (
@@ -167,14 +208,42 @@ export default function Login() {
               }}
             />
 
-            <Button
+            <TextField
               fullWidth
+              label="Confirm Password"
+              name="confirmPassword"
+              type={showConfirmPassword ? 'text' : 'password'}
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              margin="normal"
+              required
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Lock />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      edge="end"
+                    >
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <Button
               type="submit"
+              fullWidth
               variant="contained"
               size="large"
               disabled={loading}
               sx={{
-                mb: 2,
+                mt: 3,
                 py: 1.5,
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 '&:hover': {
@@ -185,40 +254,20 @@ export default function Login() {
               {loading ? (
                 <CircularProgress size={24} color="inherit" />
               ) : (
-                'Sign In'
+                'Sign Up'
               )}
             </Button>
 
-            {/* Sign Up Link */}
+            {/* Login Link */}
             <Box sx={{ textAlign: 'center', mt: 2 }}>
               <Typography variant="body2" color="text.secondary">
-                Don't have an account?{' '}
-                <MuiLink component={Link} to="/signup" underline="hover">
-                  Sign up
+                Already have an account?{' '}
+                <MuiLink component={Link} to="/login" underline="hover">
+                  Sign in
                 </MuiLink>
               </Typography>
             </Box>
           </form>
-
-          {/* Demo Credentials */}
-          <Box
-            sx={{
-              mt: 3,
-              p: 2,
-              backgroundColor: 'action.hover',
-              borderRadius: 1,
-            }}
-          >
-            <Typography variant="caption" color="text.secondary" display="block">
-              Demo Credentials:
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              Username: <strong>admin</strong>
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              Password: <strong>admin123</strong>
-            </Typography>
-          </Box>
         </CardContent>
       </Card>
     </Box>

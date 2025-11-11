@@ -69,10 +69,10 @@ export default function App() {
   const location = useLocation();
   
   // Routes that should NOT have the MainLayout (navbar/sidebar)
-  const publicRoutes = ['/login', '/register'];
+  const publicRoutes = ['/login', '/signup'];
   const isPublicRoute = publicRoutes.includes(location.pathname);
 
-  // If it's a public route (login/register), render without MainLayout
+  // If it's a public route (login/signup), render without MainLayout
   if (isPublicRoute) {
     return <Outlet />;
   }

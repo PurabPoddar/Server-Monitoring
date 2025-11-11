@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   Box,
   Typography,
@@ -32,6 +32,7 @@ import {
 import { fetchServers, fetchServerMetrics } from "./api";
 
 export default function Metrics() {
+  const [searchParams] = useSearchParams();
   const [servers, setServers] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<{ [id: string]: any }>({});
   const [loading, setLoading] = useState(false);
@@ -54,6 +55,19 @@ export default function Metrics() {
           console.error(`Failed to load metrics for server ${server.id}:`, err);
         }
       }
+      
+      // Auto-expand specific server if server ID is in URL
+      const serverId = searchParams.get('server');
+      if (serverId) {
+        setExpanded(`panel${serverId}`);
+        // Scroll to the server after a brief delay to ensure rendering
+        setTimeout(() => {
+          const element = document.getElementById(`server-${serverId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 300);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || err.message || "Failed to load servers");
     } finally {
@@ -63,7 +77,7 @@ export default function Metrics() {
 
   useEffect(() => {
     loadServers();
-  }, []);
+  }, [searchParams]);
 
   const handleChange = (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false);
@@ -123,6 +137,7 @@ export default function Metrics() {
         return (
           <Accordion
             key={server.id}
+            id={`server-${server.id}`}
             expanded={expanded === `panel${server.id}`}
             onChange={handleChange(`panel${server.id}`)}
             sx={{ mb: 2 }}
@@ -262,7 +277,9 @@ export default function Metrics() {
                               Bytes Sent
                             </Typography>
                             <Typography variant="h6">
-                              {(serverMetrics?.network?.bytes_sent / 1024 / 1024).toFixed(2)} MB
+                              {serverMetrics?.network?.bytes_sent 
+                                ? (serverMetrics.network.bytes_sent / 1024 / 1024).toFixed(2) 
+                                : '0.00'} MB
                             </Typography>
                           </Grid>
                           <Grid item xs={6}>
@@ -270,7 +287,9 @@ export default function Metrics() {
                               Bytes Received
                             </Typography>
                             <Typography variant="h6">
-                              {(serverMetrics?.network?.bytes_recv / 1024 / 1024).toFixed(2)} MB
+                              {serverMetrics?.network?.bytes_recv 
+                                ? (serverMetrics.network.bytes_recv / 1024 / 1024).toFixed(2) 
+                                : '0.00'} MB
                             </Typography>
                           </Grid>
                         </Grid>

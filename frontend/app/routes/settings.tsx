@@ -55,14 +55,16 @@ export default function Settings() {
   };
 
   const handleSaveSettings = () => {
-    // Save settings to localStorage
+    // Save settings to localStorage (client-side only)
     const settings = {
       general: { language, timezone },
       notifications: { emailNotifications, pushNotifications, alertFrequency },
       security: { twoFactorAuth, sessionTimeout },
       appearance: { theme, compactMode },
     };
-    localStorage.setItem('userSettings', JSON.stringify(settings));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('userSettings', JSON.stringify(settings));
+    }
     setSuccess('Settings saved successfully!');
     setTimeout(() => setSuccess(''), 3000);
   };

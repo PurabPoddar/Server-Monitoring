@@ -5,13 +5,13 @@ import {
   CardContent,
   Typography,
   Avatar,
-  Grid,
   TextField,
   Button,
   Divider,
   Chip,
   Alert,
   CircularProgress,
+  Stack,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -35,23 +35,25 @@ export default function Profile() {
   });
 
   useEffect(() => {
-    // Load user from localStorage
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        const userData = JSON.parse(savedUser);
-        setUser(userData);
-        setFormData({
-          username: userData.username || '',
-          email: userData.email || '',
-          role: userData.role || '',
-        });
-      } catch (err) {
-        console.error('Failed to parse user data:', err);
-        setError('Failed to load user data');
+    // Load user from localStorage (client-side only)
+    if (typeof window !== 'undefined') {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        try {
+          const userData = JSON.parse(savedUser);
+          setUser(userData);
+          setFormData({
+            username: userData.username || '',
+            email: userData.email || '',
+            role: userData.role || '',
+          });
+        } catch (err) {
+          console.error('Failed to parse user data:', err);
+          setError('Failed to load user data');
+        }
+      } else {
+        setError('No user data found. Please login again.');
       }
-    } else {
-      setError('No user data found. Please login again.');
     }
     setLoading(false);
   }, []);
@@ -75,9 +77,11 @@ export default function Profile() {
   };
 
   const handleSave = () => {
-    // Update user in localStorage
+    // Update user in localStorage (client-side only)
     const updatedUser = { ...user, ...formData };
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+    }
     setUser(updatedUser);
     setEditing(false);
     setSuccess('Profile updated successfully!');
@@ -131,9 +135,9 @@ export default function Profile() {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 2fr' }, gap: 3 }}>
         {/* Profile Card */}
-        <Grid item xs={12} md={4}>
+        <Box>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 3 }}>
               <Box display="flex" flexDirection="column" alignItems="center" sx={{ py: 2 }}>
@@ -193,10 +197,10 @@ export default function Profile() {
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
         {/* Edit Profile Form */}
-        <Grid item xs={12} md={8}>
+        <Box>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 3 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2} sx={{ mb: 3 }}>
@@ -236,35 +240,31 @@ export default function Profile() {
 
               <Divider sx={{ mb: 4 }} />
 
-              <Grid container spacing={3}>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Username"
-                    name="username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    disabled={!editing}
-                    InputProps={{
-                      startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    disabled={!editing}
-                    InputProps={{
-                      startAdornment: <EmailIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+                <TextField
+                  fullWidth
+                  label="Username"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleChange}
+                  disabled={!editing}
+                  InputProps={{
+                    startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  disabled={!editing}
+                  InputProps={{
+                    startAdornment: <EmailIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                  }}
+                />
+                <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' } }}>
                   <TextField
                     fullWidth
                     label="Role"
@@ -276,8 +276,8 @@ export default function Profile() {
                       startAdornment: <AdminIcon sx={{ mr: 1, color: 'text.secondary' }} />,
                     }}
                   />
-                </Grid>
-              </Grid>
+                </Box>
+              </Box>
 
               <Divider sx={{ my: 4 }} />
 
@@ -285,85 +285,79 @@ export default function Profile() {
                 <Typography variant="h6" fontWeight="600" gutterBottom sx={{ mb: 3 }}>
                   Account Statistics
                 </Typography>
-                <Grid container spacing={2.5}>
-                  <Grid item xs={12} sm={4}>
-                    <Card 
-                      variant="outlined" 
-                      sx={{ 
-                        height: '100%',
-                        borderColor: 'primary.main',
-                        borderWidth: 2,
-                        transition: 'all 0.3s',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(144, 202, 249, 0.25)',
-                        }
-                      }}
-                    >
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <Typography variant="h3" color="primary.main" fontWeight="bold" sx={{ mb: 1 }}>
-                          {Math.floor(Math.random() * 50) + 10}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" fontWeight="500">
-                          Servers Managed
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <Card 
-                      variant="outlined" 
-                      sx={{ 
-                        height: '100%',
-                        borderColor: 'success.main',
-                        borderWidth: 2,
-                        transition: 'all 0.3s',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(76, 175, 80, 0.25)',
-                        }
-                      }}
-                    >
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <Typography variant="h3" color="success.main" fontWeight="bold" sx={{ mb: 1 }}>
-                          {Math.floor(Math.random() * 100) + 50}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" fontWeight="500">
-                          Active Sessions
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <Card 
-                      variant="outlined" 
-                      sx={{ 
-                        height: '100%',
-                        borderColor: 'warning.main',
-                        borderWidth: 2,
-                        transition: 'all 0.3s',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(255, 152, 0, 0.25)',
-                        }
-                      }}
-                    >
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <Typography variant="h3" color="warning.main" fontWeight="bold" sx={{ mb: 1 }}>
-                          {Math.floor(Math.random() * 20) + 5}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" fontWeight="500">
-                          Alerts Today
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2.5 }}>
+                  <Card 
+                    variant="outlined" 
+                    sx={{ 
+                      height: '100%',
+                      borderColor: 'primary.main',
+                      borderWidth: 2,
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 8px 24px rgba(144, 202, 249, 0.25)',
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                      <Typography variant="h3" color="primary.main" fontWeight="bold" sx={{ mb: 1 }}>
+                        {Math.floor(Math.random() * 50) + 10}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" fontWeight="500">
+                        Servers Managed
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    variant="outlined" 
+                    sx={{ 
+                      height: '100%',
+                      borderColor: 'success.main',
+                      borderWidth: 2,
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 8px 24px rgba(76, 175, 80, 0.25)',
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                      <Typography variant="h3" color="success.main" fontWeight="bold" sx={{ mb: 1 }}>
+                        {Math.floor(Math.random() * 100) + 50}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" fontWeight="500">
+                        Active Sessions
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    variant="outlined" 
+                    sx={{ 
+                      height: '100%',
+                      borderColor: 'warning.main',
+                      borderWidth: 2,
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 8px 24px rgba(255, 152, 0, 0.25)',
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                      <Typography variant="h3" color="warning.main" fontWeight="bold" sx={{ mb: 1 }}>
+                        {Math.floor(Math.random() * 20) + 5}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" fontWeight="500">
+                        Alerts Today
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Box>
               </Box>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </Box>
   );
 }

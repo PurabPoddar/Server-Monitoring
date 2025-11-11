@@ -1,18 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Link, useLocation } from "react-router";
 import {
   Box,
-  Drawer,
   List,
   ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   Typography,
-  Divider,
-  IconButton,
-  useTheme,
-  useMediaQuery,
 } from "@mui/material";
 import {
   Home,
@@ -20,10 +15,6 @@ import {
   Analytics,
   Computer,
   Add,
-  Menu as MenuIcon,
-  Close as CloseIcon,
-  PushPin,
-  PushPinOutlined,
   Assessment,
 } from "@mui/icons-material";
 import Logo from "../assets/logo.svg";
@@ -37,10 +28,6 @@ interface SidebarProps {
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('xl'));
-
-
 
   const navigationItems = [
     {

@@ -64,7 +64,7 @@ export default function Servers() {
             fetchServerUsers(server.id)
           ]);
           setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
-          setUsers(prev => ({ ...prev, [server.id]: usersResponse.data }));
+          setUsers(prev => ({ ...prev, [server.id]: usersResponse.data.users || [] }));
         } catch (err) {
           console.error(`Failed to load data for server ${server.id}:`, err);
         }
@@ -221,7 +221,7 @@ export default function Servers() {
                       size="small"
                       variant="outlined"
                       component={Link}
-                      to={`/dashboard`}
+                      to={`/metrics?server=${server.id}`}
                     >
                       View Details
                     </Button>
@@ -338,31 +338,68 @@ export default function Servers() {
           </Box>
           
           <Typography variant="h6" gutterBottom>
-            Existing Users
+            Existing Users ({(users[selectedServer?.id] || []).length})
           </Typography>
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Username</TableCell>
+                  <TableCell>Home Directory</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Last Login</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {(users[selectedServer?.id] || []).map((user, index) => (
                   <TableRow key={index}>
-                    <TableCell>{user.username}</TableCell>
+                    <TableCell>
+                      <Box>
+                        <Typography variant="body2" fontWeight="medium">
+                          {user.username}
+                        </Typography>
+                        {user.uid && (
+                          <Typography variant="caption" color="text.secondary">
+                            UID: {user.uid}
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption">{user.home_directory || 'N/A'}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={user.status || 'active'} 
+                        size="small" 
+                        color={user.status === 'active' ? 'success' : 'default'}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption">{user.last_login || 'N/A'}</Typography>
+                    </TableCell>
                     <TableCell>
                       <IconButton
                         size="small"
                         color="error"
                         onClick={() => handleDeleteUser(selectedServer.id, user.username)}
+                        title="Delete User"
                       >
                         <Delete />
                       </IconButton>
                     </TableCell>
                   </TableRow>
                 ))}
+                {(users[selectedServer?.id] || []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      <Typography variant="body2" color="text.secondary" py={2}>
+                        No users found. Add a user to get started.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>

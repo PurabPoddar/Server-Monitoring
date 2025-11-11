@@ -22,30 +22,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for existing auth token on mount
-    const token = localStorage.getItem('authToken');
-    const savedUser = localStorage.getItem('user');
+    // Check for existing auth token on mount (client-side only)
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('authToken');
+      const savedUser = localStorage.getItem('user');
 
-    if (token && savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (err) {
-        console.error('Failed to parse saved user:', err);
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('user');
+      if (token && savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (err) {
+          console.error('Failed to parse saved user:', err);
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('user');
+        }
       }
     }
   }, []);
 
   const login = (token: string, userData: User) => {
-    localStorage.setItem('authToken', token);
-    localStorage.setItem('user', JSON.stringify(userData));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('authToken', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+    }
     setUser(userData);
   };
 
   const logout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+    }
     setUser(null);
     navigate('/login');
   };

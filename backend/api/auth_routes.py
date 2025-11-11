@@ -100,3 +100,58 @@ def logout():
     """Logout endpoint (client-side token removal)"""
     return jsonify({'message': 'Logout successful'}), 200
 
+
+@auth_bp.route('/register', methods=['POST'])
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+
+        if not username or not email or not password:
+            return jsonify({'message': 'Username, email, and password are required'}), 400
+
+        # Check if user already exists (in demo, just check against existing users)
+        if username in DEMO_USERS:
+            return jsonify({'message': 'Username already exists'}), 409
+
+        # In production, you would:
+        # 1. Hash the password using bcrypt or similar
+        # 2. Store user in database
+        # 3. Generate proper JWT token
+        
+        # For demo purposes, add user to DEMO_USERS and generate token
+        user_id = len(DEMO_USERS) + 1
+        DEMO_USERS[username] = {
+            'id': user_id,
+            'username': username,
+            'password': password,  # In production, use hashed passwords
+            'email': email,
+            'role': 'user'
+        }
+
+        # Generate JWT token
+        token_payload = {
+            'user_id': user_id,
+            'username': username,
+            'role': 'user',
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }
+        token = jwt.encode(token_payload, SECRET_KEY, algorithm='HS256')
+
+        return jsonify({
+            'message': 'Registration successful',
+            'token': token,
+            'user': {
+                'id': user_id,
+                'username': username,
+                'email': email,
+                'role': 'user'
+            }
+        }), 201
+
+    except Exception as e:
+        return jsonify({'message': f'Registration failed: {str(e)}'}), 500
+

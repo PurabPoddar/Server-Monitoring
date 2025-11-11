@@ -6,8 +6,6 @@ import {
   Toolbar,
   IconButton,
   Typography,
-  useTheme,
-  useMediaQuery,
   Button,
   Avatar,
   Menu,
@@ -18,7 +16,6 @@ import {
 } from "@mui/material";
 import {
   Menu as MenuIcon,
-  Close as CloseIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
   Login as LoginIcon,
@@ -29,28 +26,45 @@ import Sidebar, { drawerWidth } from "./Sidebar";
 import Logo from "../assets/logo.svg";
 
 export default function MainLayout() {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [user, setUser] = useState<any>(null);
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('xl'));
   const navigate = useNavigate();
   const isMenuOpen = Boolean(anchorEl);
 
   useEffect(() => {
-    // Load user from localStorage
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (err) {
-        console.error('Failed to parse user data:', err);
+    // Load sidebar state from localStorage (client-side only)
+    if (typeof window !== 'undefined') {
+      const savedState = localStorage.getItem('sidebarOpen');
+      if (savedState !== null) {
+        setSidebarOpen(JSON.parse(savedState));
       }
     }
   }, []);
 
+  useEffect(() => {
+    // Load user from localStorage (client-side only)
+    if (typeof window !== 'undefined') {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (err) {
+          console.error('Failed to parse user data:', err);
+        }
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // Save sidebar state to localStorage (client-side only)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sidebarOpen', JSON.stringify(sidebarOpen));
+    }
+  }, [sidebarOpen]);
+
   const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
+    setSidebarOpen(!sidebarOpen);
   };
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -62,8 +76,10 @@ export default function MainLayout() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+    }
     setUser(null);
     handleMenuClose();
     navigate('/login');
@@ -109,10 +125,10 @@ export default function MainLayout() {
             sx={{ 
               mr: 2, 
               color: 'text.primary',
-              backgroundColor: mobileOpen ? 'primary.main' : 'action.hover',
+              backgroundColor: sidebarOpen ? 'primary.main' : 'action.hover',
               borderRadius: 1,
               '&:hover': {
-                backgroundColor: mobileOpen ? 'primary.dark' : 'action.selected',
+                backgroundColor: sidebarOpen ? 'primary.dark' : 'action.selected',
               }
             }}
           >
@@ -260,7 +276,7 @@ export default function MainLayout() {
 
       {/* Sidebar */}
       <Sidebar 
-        open={mobileOpen} 
+        open={sidebarOpen} 
         onClose={handleDrawerToggle}
       />
 
@@ -271,7 +287,7 @@ export default function MainLayout() {
           flexGrow: 1,
           minHeight: '100vh',
           backgroundColor: 'background.default',
-          marginLeft: mobileOpen ? `${drawerWidth}px` : 0,
+          marginLeft: sidebarOpen ? `${drawerWidth}px` : 0,
           transition: 'margin-left 0.3s ease-in-out',
           paddingTop: '64px', // Account for fixed AppBar height
           marginTop: 0,

@@ -106,6 +106,10 @@ def fetch_metrics(server_id: int):
                 "mount_point": "/" if server.os_type == "linux" else "C:"
             },
             "network": {
+                "bytes_sent": random.randint(1000000000, 10000000000),
+                "bytes_recv": random.randint(1000000000, 10000000000),
+                "packets_sent": random.randint(100000, 1000000),
+                "packets_recv": random.randint(100000, 1000000),
                 "interfaces": [
                     {
                         "name": "eth0" if server.os_type == "linux" else "Ethernet",
