@@ -16,6 +16,8 @@ import {
   Computer,
   Add,
   Assessment,
+  Settings,
+  Person,
 } from "@mui/icons-material";
 import Logo from "../assets/logo.svg";
 
@@ -59,6 +61,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       text: 'Reports',
       icon: <Assessment />,
       path: '/reports',
+    },
+    {
+      text: 'My Profile',
+      icon: <Person />,
+      path: '/profile',
+    },
+    {
+      text: 'Settings',
+      icon: <Settings />,
+      path: '/settings',
     },
   ];
 

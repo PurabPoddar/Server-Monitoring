@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router";
 import {
   Box,
   Typography,
@@ -28,6 +29,7 @@ import {
   InsertDriveFile,
   PictureAsPdf,
   TableChart,
+  Add,
 } from "@mui/icons-material";
 import { fetchServers, fetchServerMetrics } from "./api";
 
@@ -334,10 +336,22 @@ export default function Reports() {
             </Table>
           </TableContainer>
           {servers.length === 0 && (
-            <Box textAlign="center" py={4}>
-              <Typography variant="body2" color="text.secondary">
-                No servers available. Please register a server first.
+            <Box textAlign="center" py={8}>
+              <Assessment sx={{ fontSize: 80, color: 'text.secondary', mb: 3 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                No Servers to Report
               </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Register servers to generate detailed reports of their performance and health metrics.
+              </Typography>
+              <Button
+                component={Link}
+                to="/register"
+                variant="contained"
+                startIcon={<Add />}
+              >
+                Register a Server
+              </Button>
             </Box>
           )}
         </CardContent>

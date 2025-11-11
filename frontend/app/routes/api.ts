@@ -1,28 +1,38 @@
-import axios from "axios";
+/**
+ * API Client - Routes Level
+ * This file re-exports from the centralized API client with mode support
+ */
 
-const api = axios.create({
-  baseURL: "http://localhost:5001/api",
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
+import { api as centralizedApi, apiClient } from "../utils/api";
+
+// Re-export the main API client
+export default apiClient;
 
 // Server registration
-export const registerServer = (data: any) => api.post("/servers", data);
-// List servers
-export const fetchServers = () => api.get("/servers");
-// Fetch metrics for a server
-export const fetchServerMetrics = (id: string) => api.get(`/servers/${id}/metrics?mock=true`);
-// List users for a server
-export const fetchServerUsers = (id: string) => api.get(`/servers/${id}/users?mock=true`);
-// Add user to a server
-export const addServerUser = (id: string, data: any) => api.post(`/servers/${id}/users`, data);
-// Delete user from a server
-export const deleteServerUser = (id: string, username: string) => api.delete(`/servers/${id}/users/${username}`);
-// Start VM
-export const startVM = (name: string) => api.post(`/vm/${name}/start`);
-// Stop VM
-export const stopVM = (name: string) => api.post(`/vm/${name}/stop`);
+export const registerServer = (data: any) => centralizedApi.servers.register(data);
 
-export default api;
+// List servers (with automatic data mode)
+export const fetchServers = () => centralizedApi.servers.list();
+
+// Fetch metrics for a server (with automatic data mode)
+export const fetchServerMetrics = (id: string | number) => 
+  centralizedApi.servers.getMetrics(Number(id));
+
+// List users for a server (with automatic data mode)
+export const fetchServerUsers = (id: string | number) => 
+  centralizedApi.users.list(Number(id));
+
+// Add user to a server
+export const addServerUser = (id: string | number, data: any) => 
+  centralizedApi.users.create(Number(id), data);
+
+// Delete user from a server
+export const deleteServerUser = (id: string | number, username: string) => 
+  centralizedApi.users.delete(Number(id), username);
+
+// Start VM
+export const startVM = (name: string) => centralizedApi.vm.start(name);
+
+// Stop VM
+export const stopVM = (name: string) => centralizedApi.vm.stop(name);
 

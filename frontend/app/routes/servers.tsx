@@ -153,8 +153,30 @@ export default function Servers() {
       )}
 
       {/* Server Overview Cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
-        {servers.map((server) => {
+      {servers.length === 0 ? (
+        <Card sx={{ mb: 4 }}>
+          <CardContent sx={{ py: 8, textAlign: 'center' }}>
+            <Computer sx={{ fontSize: 80, color: 'text.secondary', mb: 3 }} />
+            <Typography variant="h5" gutterBottom fontWeight="600">
+              No Servers Registered Yet
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: 600, mx: 'auto' }}>
+              Start monitoring your infrastructure by registering your first server. You can add Linux or Windows servers to track their performance and health.
+            </Typography>
+            <Button
+              component={Link}
+              to="/register"
+              variant="contained"
+              size="large"
+              startIcon={<Add />}
+            >
+              Register Your First Server
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
+          {servers.map((server) => {
           const serverMetrics = metrics[server.id];
           const serverUsers = users[server.id] || [];
           
@@ -231,9 +253,11 @@ export default function Servers() {
             </Box>
           );
         })}
-      </Box>
+        </Box>
+      )}
 
       {/* Detailed Server Table */}
+      {servers.length > 0 && (
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -309,6 +333,7 @@ export default function Servers() {
           </TableContainer>
         </CardContent>
       </Card>
+      )}
 
       {/* User Management Dialog */}
       <Dialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} maxWidth="md" fullWidth>

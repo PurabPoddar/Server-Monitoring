@@ -21,8 +21,10 @@ import {
   Save as SaveIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
+import { fetchServers } from './api';
 
 export default function Profile() {
+  const [serverCount, setServerCount] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -56,6 +58,19 @@ export default function Profile() {
       }
     }
     setLoading(false);
+  }, []);
+
+  // Fetch server count for statistics
+  useEffect(() => {
+    const loadServerCount = async () => {
+      try {
+        const response = await fetchServers();
+        setServerCount(response.data.length);
+      } catch (err) {
+        console.error('Failed to load server count:', err);
+      }
+    };
+    loadServerCount();
   }, []);
 
   const handleEdit = () => {
@@ -301,7 +316,7 @@ export default function Profile() {
                   >
                     <CardContent sx={{ textAlign: 'center', py: 3 }}>
                       <Typography variant="h3" color="primary.main" fontWeight="bold" sx={{ mb: 1 }}>
-                        {Math.floor(Math.random() * 50) + 10}
+                        {serverCount}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" fontWeight="500">
                         Servers Managed
@@ -323,10 +338,10 @@ export default function Profile() {
                   >
                     <CardContent sx={{ textAlign: 'center', py: 3 }}>
                       <Typography variant="h3" color="success.main" fontWeight="bold" sx={{ mb: 1 }}>
-                        {Math.floor(Math.random() * 100) + 50}
+                        {serverCount > 0 ? serverCount : 0}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" fontWeight="500">
-                        Active Sessions
+                        Active Servers
                       </Typography>
                     </CardContent>
                   </Card>
@@ -345,7 +360,7 @@ export default function Profile() {
                   >
                     <CardContent sx={{ textAlign: 'center', py: 3 }}>
                       <Typography variant="h3" color="warning.main" fontWeight="bold" sx={{ mb: 1 }}>
-                        {Math.floor(Math.random() * 20) + 5}
+                        0
                       </Typography>
                       <Typography variant="body2" color="text.secondary" fontWeight="500">
                         Alerts Today

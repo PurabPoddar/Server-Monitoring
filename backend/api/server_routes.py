@@ -17,6 +17,9 @@ from ..handlers.windows_handler import (
     delete_user as windows_delete_user,
 )
 
+# Import demo data
+from ..demo_data import get_demo_servers, generate_demo_metrics, get_demo_users
+
 
 server_bp = Blueprint("server_bp", __name__)
 
@@ -26,6 +29,35 @@ def _require_admin():
     expected = os.getenv("ADMIN_TOKEN")
     if expected and token != expected:
         return False
+    return True
+
+
+def _is_demo_mode():
+    """Check if the request is in demo mode"""
+    # Check header first (most reliable)
+    mode = request.headers.get("X-Data-Mode", "").lower()
+    if mode == "demo":
+        return True
+    if mode == "live":
+        return False
+    
+    # Check query param
+    mode = request.args.get("mode", "").lower()
+    if mode == "demo":
+        return True
+    if mode == "live":
+        return False
+    
+    # Check body
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "").lower()
+    if mode == "demo":
+        return True
+    if mode == "live":
+        return False
+    
+    # Default to demo mode (safer for initial setup)
+    # This will only happen if no mode is specified at all
     return True
 
 
@@ -53,19 +85,44 @@ def register_server():
 
 @server_bp.route("/servers", methods=["GET"])
 def list_servers():
+    """List servers - returns demo data in demo mode, real data in live mode"""
+    if _is_demo_mode():
+        # Return demo servers
+        demo_servers = get_demo_servers()
+        # Add metrics to each demo server
+        for server in demo_servers:
+            server['metrics'] = generate_demo_metrics(server)
+        return jsonify(demo_servers)
+    
+    # Live mode - return real servers from database
     servers = Server.query.order_by(Server.id.desc()).all()
     return jsonify([s.to_dict() for s in servers])
 
 
 @server_bp.route("/servers/<int:server_id>/metrics", methods=["GET"])  # credentials via query/body
 def fetch_metrics(server_id: int):
-    server = Server.query.get_or_404(server_id)
+    """Fetch metrics for a specific server"""
     data = request.get_json(silent=True) or {}
     # Support query params for GET requests
     if not data:
         data = request.args.to_dict()
 
-    # Mock metrics for testing UI (remove this in production)
+    # Demo mode - use organized demo data
+    if _is_demo_mode():
+        # Get demo server by ID
+        from ..demo_data.servers import get_demo_server_by_id
+        demo_server = get_demo_server_by_id(server_id)
+        if not demo_server:
+            return jsonify({"error": "Server not found"}), 404
+        
+        # Generate and return demo metrics
+        metrics = generate_demo_metrics(demo_server)
+        return jsonify(metrics)
+    
+    # Live mode - fetch real server and metrics
+    server = Server.query.get_or_404(server_id)
+    
+    # Check for legacy mock mode parameter for backward compatibility
     mock_mode = data.get("mock", "false").lower() == "true"
     if mock_mode:
         import random
@@ -163,12 +220,27 @@ def fetch_metrics(server_id: int):
 
 @server_bp.route("/servers/<int:server_id>/users", methods=["GET"])  # list users on remote host
 def list_remote_users(server_id: int):
-    server = Server.query.get_or_404(server_id)
+    """List users on a remote server"""
     data = request.get_json(silent=True) or {}
     if not data:
         data = request.args.to_dict()
 
-    # Mock users for testing UI (remove this in production)
+    # Demo mode - use organized demo data
+    if _is_demo_mode():
+        # Get demo server by ID
+        from ..demo_data.servers import get_demo_server_by_id
+        demo_server = get_demo_server_by_id(server_id)
+        if not demo_server:
+            return jsonify({"error": "Server not found"}), 404
+        
+        # Get demo users for this server
+        users = get_demo_users(demo_server)
+        return jsonify({"users": users})
+    
+    # Live mode - fetch real server
+    server = Server.query.get_or_404(server_id)
+    
+    # Check for legacy mock mode parameter for backward compatibility
     mock_mode = data.get("mock", "false").lower() == "true"
     if mock_mode:
         import random

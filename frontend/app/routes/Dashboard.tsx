@@ -258,29 +258,55 @@ export default function Dashboard() {
         </Card>
       </Box>
 
-      {/* Professional Charts Section */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
-        <MetricChart
-          data={historicalData.map(d => d.cpu)}
-          title="CPU Usage Trend"
-          color="#ff6b6b"
-          icon={<Speed sx={{ color: 'primary.main' }} />}
-        />
-        
-        <MetricChart
-          data={historicalData.map(d => d.memory)}
-          title="Memory Usage Trend"
-          color="#4ecdc4"
-          icon={<Memory sx={{ color: 'primary.main' }} />}
-        />
-        
-        <MetricChart
-          data={historicalData.map(d => d.disk)}
-          title="Disk Usage Trend"
-          color="#45b7d1"
-          icon={<HardDrive sx={{ color: 'primary.main' }} />}
-        />
       </Box>
+      {hasData ? (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
+          <MetricChart
+            data={historicalData.map(d => d.cpu)}
+            title="CPU Usage Trend"
+            color="#ff6b6b"
+            icon={<Speed sx={{ color: 'primary.main' }} />}
+          />
+          
+          <MetricChart
+            data={historicalData.map(d => d.memory)}
+            title="Memory Usage Trend"
+            color="#4ecdc4"
+            icon={<Memory sx={{ color: 'primary.main' }} />}
+          />
+          
+          <MetricChart
+            data={historicalData.map(d => d.disk)}
+            title="Disk Usage Trend"
+            color="#45b7d1"
+            icon={<HardDrive sx={{ color: 'primary.main' }} />}
+          />
+        </Box>
+      ) : (
+        <Card sx={{ mb: 4 }}>
+          <CardContent sx={{ py: 6, textAlign: 'center' }}>
+            <Timeline sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              No Server Data Available
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {servers.length === 0 
+                ? "Add servers to start monitoring system metrics and trends." 
+                : "Loading server metrics..."}
+            </Typography>
+            <Button
+              component={Link}
+              to="/register"
+              variant="contained"
+              sx={{ mt: 2 }}
+            >
+              Register Your First Server
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* System Health Overview */}
 
       {/* System Health Overview */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>

@@ -28,6 +28,8 @@ import {
   Speed,
   Storage as HardDrive,
   ExpandMore,
+  Timeline,
+  Add,
 } from "@mui/icons-material";
 import { fetchServers, fetchServerMetrics } from "./api";
 
@@ -126,7 +128,29 @@ export default function Metrics() {
       </Typography>
 
       {/* Server Accordions */}
-      {servers.map((server) => {
+      {servers.length === 0 ? (
+        <Card>
+          <CardContent sx={{ py: 8, textAlign: 'center' }}>
+            <Timeline sx={{ fontSize: 80, color: 'text.secondary', mb: 3 }} />
+            <Typography variant="h5" gutterBottom fontWeight="600">
+              No Metrics Available
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: 600, mx: 'auto' }}>
+              Register servers to start collecting and analyzing their performance metrics, resource usage, and health data.
+            </Typography>
+            <Button
+              component={Link}
+              to="/register"
+              variant="contained"
+              size="large"
+              startIcon={<Add />}
+            >
+              Register a Server
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        servers.map((server) => {
         const serverMetrics = metrics[server.id];
         const serverStatus = server.status || 'unknown';
         const statusColor = serverStatus === 'online' ? 'success' : (serverStatus === 'offline' ? 'error' : 'warning');
@@ -187,7 +211,9 @@ export default function Metrics() {
                         sx={{ height: 8, borderRadius: 4, my: 2 }}
                       />
                       <Typography variant="caption" color="text.secondary">
-                        Cores: {serverMetrics?.cpu?.cores || 'N/A'}
+                        Cores: {Array.isArray(serverMetrics?.cpu?.cores) 
+                          ? serverMetrics.cpu.cores.length 
+                          : serverMetrics?.cpu?.cores || 'N/A'}
                       </Typography>
                       <Box mt={1}>
                         <Chip
@@ -344,9 +370,11 @@ export default function Metrics() {
             </AccordionDetails>
           </Accordion>
         );
-      })}
+      })
+      )}
 
-      {servers.length === 0 && !loading && (
+      {/* Old empty state removed - now handled by ternary above */}
+      {false && (
         <Box textAlign="center" py={8}>
           <Computer sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
           <Typography variant="h6" color="text.secondary">
