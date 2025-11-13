@@ -36,8 +36,9 @@ import {
   Storage,
   Memory,
   NetworkCheck,
+  NetworkCheck as TestConnectionIcon,
 } from "@mui/icons-material";
-import { fetchServers, fetchServerMetrics, fetchServerUsers, addServerUser, deleteServerUser } from "./api";
+import { fetchServers, fetchServerMetrics, fetchServerUsers, addServerUser, deleteServerUser, testServerConnection, updateServerStatus } from "./api";
 
 export default function Servers() {
   const [servers, setServers] = useState<any[]>([]);
@@ -48,6 +49,11 @@ export default function Servers() {
   const [selectedServer, setSelectedServer] = useState<any>(null);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({ username: "", password: "" });
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testPassword, setTestPassword] = useState("");
+  const [testPort, setTestPort] = useState("22");
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const loadServers = async () => {
     setLoading(true);
@@ -59,12 +65,33 @@ export default function Servers() {
       // Load metrics and users for all servers
       for (const server of response.data) {
         try {
-          const [metricsResponse, usersResponse] = await Promise.all([
-            fetchServerMetrics(server.id),
-            fetchServerUsers(server.id)
-          ]);
-          setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
-          setUsers(prev => ({ ...prev, [server.id]: usersResponse.data.users || [] }));
+          // For password auth servers, we need password to fetch metrics
+          // For now, skip if password auth and no password available
+          // User can use "Test Connection" which will load metrics
+          let metricsResponse = null;
+          if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
+            // For localhost test server, use default password
+            try {
+              metricsResponse = await fetchServerMetrics(server.id, 'testpass123', 2222);
+            } catch (err) {
+              console.error(`Failed to load metrics for server ${server.id}:`, err);
+            }
+          } else if (server.auth_type !== 'password') {
+            // For key-based auth, try without password
+            metricsResponse = await fetchServerMetrics(server.id);
+          }
+          
+          if (metricsResponse) {
+            setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+          }
+          
+          // Try to load users (may fail if password needed)
+          try {
+            const usersResponse = await fetchServerUsers(server.id);
+            setUsers(prev => ({ ...prev, [server.id]: usersResponse.data.users || [] }));
+          } catch (err) {
+            console.error(`Failed to load users for server ${server.id}:`, err);
+          }
         } catch (err) {
           console.error(`Failed to load data for server ${server.id}:`, err);
         }
@@ -78,6 +105,7 @@ export default function Servers() {
 
   useEffect(() => {
     loadServers();
+    // Removed auto-refresh - users can manually refresh or use polling on metrics page
   }, []);
 
   const handleAddUser = async () => {
@@ -106,6 +134,64 @@ export default function Servers() {
     } catch (err: any) {
       setError(err?.response?.data?.message || err.message || "Failed to delete user");
     }
+  };
+
+  const handleTestConnection = async () => {
+    if (!selectedServer) return;
+    
+    setTestingConnection(true);
+    setTestResult(null);
+    setError(null);
+    
+    try {
+      const password = testPassword || undefined;
+      const port = testPort ? parseInt(testPort) : 22;
+      const response = await testServerConnection(selectedServer.id, password, port);
+      
+      setTestResult({
+        success: response.data.success,
+        message: response.data.message || "Connection test completed"
+      });
+      
+      // Update server status in the list
+      if (response.data.success) {
+        setServers(prev => prev.map(s => 
+          s.id === selectedServer.id 
+            ? { ...s, status: response.data.status || 'online' }
+            : s
+        ));
+        
+        // Reload metrics for this server
+        try {
+          const port = testPort ? parseInt(testPort) : 22;
+          const password = testPassword || (selectedServer.ip === '127.0.0.1' ? 'testpass123' : undefined);
+          if (password) {
+            const metricsResponse = await fetchServerMetrics(selectedServer.id, password, port);
+            setMetrics(prev => ({ ...prev, [selectedServer.id]: metricsResponse.data }));
+          }
+        } catch (err) {
+          console.error('Failed to reload metrics:', err);
+        }
+        
+        // Reload servers to get updated status
+        setTimeout(() => loadServers(), 1000);
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err?.response?.data?.error || err?.response?.data?.message || err.message || "Connection test failed"
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const openTestDialog = (server: any) => {
+    setSelectedServer(server);
+    setTestPassword("");
+    setTestPort("22");
+    setTestResult(null);
+    setTestDialogOpen(true);
   };
 
   const getStatusColor = (status: string | null) => {
@@ -227,7 +313,18 @@ export default function Servers() {
                     Users: {serverUsers.length}
                   </Typography>
                   
-                  <Box display="flex" gap={1}>
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {server.os_type === "linux" && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<TestConnectionIcon />}
+                        onClick={() => openTestDialog(server)}
+                      >
+                        Test Connection
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       variant="outlined"
@@ -334,6 +431,69 @@ export default function Servers() {
         </CardContent>
       </Card>
       )}
+
+      {/* Test Connection Dialog */}
+      <Dialog open={testDialogOpen} onClose={() => setTestDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Test Connection - {selectedServer?.name || selectedServer?.hostname}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Test SSH connection to this server. If the server uses password authentication, enter the password below.
+            </Typography>
+            
+            <TextField
+              fullWidth
+              type="number"
+              label="SSH Port"
+              value={testPort}
+              onChange={(e) => setTestPort(e.target.value)}
+              sx={{ mb: 2 }}
+              helperText="SSH port (default: 22)"
+              inputProps={{ min: 1, max: 65535 }}
+            />
+            
+            {selectedServer?.auth_type === "password" && (
+              <TextField
+                fullWidth
+                type="password"
+                label="SSH Password"
+                value={testPassword}
+                onChange={(e) => setTestPassword(e.target.value)}
+                sx={{ mb: 2 }}
+                helperText="Enter password if server uses password authentication"
+              />
+            )}
+            
+            {selectedServer?.auth_type === "key" && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                This server uses SSH key authentication. The stored key path will be used for testing.
+              </Alert>
+            )}
+            
+            {testResult && (
+              <Alert 
+                severity={testResult.success ? "success" : "error"} 
+                sx={{ mb: 2 }}
+              >
+                {testResult.message}
+              </Alert>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTestDialogOpen(false)}>Close</Button>
+          <Button 
+            onClick={handleTestConnection} 
+            variant="contained"
+            disabled={testingConnection}
+            startIcon={testingConnection ? <CircularProgress size={20} /> : <TestConnectionIcon />}
+          >
+            {testingConnection ? "Testing..." : "Test Connection"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* User Management Dialog */}
       <Dialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} maxWidth="md" fullWidth>

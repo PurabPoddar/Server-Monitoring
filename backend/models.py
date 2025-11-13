@@ -20,6 +20,7 @@ class Server(db.Model):
     last_seen = db.Column(db.DateTime, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    is_demo = db.Column(db.Boolean, default=False, nullable=False)
 
     def to_dict(self) -> dict:
         return {
@@ -35,6 +36,7 @@ class Server(db.Model):
             "last_seen": self.last_seen.isoformat() + "Z" if self.last_seen else None,
             "notes": self.notes,
             "created_at": self.created_at.isoformat() + "Z",
+            "is_demo": self.is_demo,
         }
 
 

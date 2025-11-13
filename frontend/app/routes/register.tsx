@@ -11,6 +11,10 @@ import {
   Alert,
   CircularProgress,
   Paper,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import {
   Computer,
@@ -30,13 +34,15 @@ export default function RegisterServer() {
     ip: "",
     os_type: "linux",
     username: "ubuntu",
+    auth_type: "key",
     key_path: "",
+    password: "",
     notes: ""
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement> | { target: { name: string; value: unknown } }) => {
     const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    setForm(prev => ({ ...prev, [name]: value as string }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,7 +60,9 @@ export default function RegisterServer() {
         ip: "",
         os_type: "linux",
         username: "ubuntu",
+        auth_type: "key",
         key_path: "",
+        password: "",
         notes: ""
       });
       
@@ -142,15 +150,45 @@ export default function RegisterServer() {
                     helperText="SSH username for Linux or Windows username"
                   />
                   
-                  <TextField
-                    fullWidth
-                    label="SSH Key Path"
-                    name="key_path"
-                    value={form.key_path}
-                    onChange={handleChange}
-                    helperText="Path to SSH private key (Linux only)"
-                    placeholder="/home/user/.ssh/id_rsa"
-                  />
+                  {form.os_type === "linux" && (
+                    <FormControl fullWidth>
+                      <InputLabel>Authentication Type</InputLabel>
+                      <Select
+                        name="auth_type"
+                        value={form.auth_type}
+                        label="Authentication Type"
+                        onChange={handleChange}
+                      >
+                        <MenuItem value="key">SSH Key</MenuItem>
+                        <MenuItem value="password">Password</MenuItem>
+                      </Select>
+                    </FormControl>
+                  )}
+                  
+                  {form.os_type === "linux" && form.auth_type === "key" && (
+                    <TextField
+                      fullWidth
+                      label="SSH Key Path"
+                      name="key_path"
+                      value={form.key_path}
+                      onChange={handleChange}
+                      helperText="Path to SSH private key"
+                      placeholder="/home/user/.ssh/id_rsa"
+                    />
+                  )}
+                  
+                  {form.os_type === "linux" && form.auth_type === "password" && (
+                    <TextField
+                      fullWidth
+                      type="password"
+                      label="SSH Password"
+                      name="password"
+                      value={form.password}
+                      onChange={handleChange}
+                      helperText="SSH password for authentication"
+                      required={form.auth_type === "password"}
+                    />
+                  )}
                   
                   <TextField
                     fullWidth
@@ -225,7 +263,9 @@ export default function RegisterServer() {
                   For Linux Servers:
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  • Provide SSH key path<br/>
+                  • Choose authentication: SSH Key or Password<br/>
+                  • SSH Key: Provide path to private key<br/>
+                  • Password: Provide SSH password<br/>
                   • Ensure SSH access is configured<br/>
                   • Default username: ubuntu
                 </Typography>

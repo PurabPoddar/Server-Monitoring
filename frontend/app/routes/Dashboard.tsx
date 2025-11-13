@@ -59,8 +59,35 @@ export default function Dashboard() {
       // Load metrics for all servers
       for (const server of response.data) {
         try {
-          const metricsResponse = await fetchServerMetrics(server.id);
-          setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+          // For password auth localhost servers, try different ports
+          if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
+            // Try port 2222 first (first server), then 2223 (second server)
+            // We'll try both ports and use whichever works
+            const ports = [2222, 2223];
+            let success = false;
+            for (const port of ports) {
+              try {
+                const metricsResponse = await fetchServerMetrics(server.id, 'testpass123', port);
+                if (metricsResponse && metricsResponse.data) {
+                  setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+                  success = true;
+                  break;
+                }
+              } catch (portErr) {
+                // Try next port
+                continue;
+              }
+            }
+            if (!success) {
+              console.error(`Failed to load metrics for server ${server.id} on any port`);
+            }
+          } else if (server.auth_type !== 'password') {
+            // For key-based auth, try without password
+            const metricsResponse = await fetchServerMetrics(server.id);
+            if (metricsResponse) {
+              setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+            }
+          }
         } catch (err) {
           console.error(`Failed to load metrics for server ${server.id}:`, err);
         }
@@ -74,6 +101,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadServers();
+    // Removed auto-refresh - users can manually refresh or use polling on metrics page
   }, []);
 
   // Calculate dashboard statistics

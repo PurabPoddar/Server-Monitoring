@@ -32,6 +32,8 @@ import {
   Add,
 } from "@mui/icons-material";
 import { fetchServers, fetchServerMetrics } from "./api";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function Reports() {
   const [servers, setServers] = useState<any[]>([]);
@@ -68,11 +70,43 @@ export default function Reports() {
         // Download all servers
         for (const server of servers) {
           try {
-            const metricsResponse = await fetchServerMetrics(server.id);
-            serverData.push({
-              ...server,
-              metrics: metricsResponse.data,
-            });
+            // For password auth localhost servers, try different ports
+            let metricsResponse;
+            if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
+              // Try port 2222 first (first server), then 2223 (second server)
+              const ports = [2222, 2223];
+              let success = false;
+              for (const port of ports) {
+                try {
+                  metricsResponse = await fetchServerMetrics(server.id, 'testpass123', port);
+                  if (metricsResponse && metricsResponse.data) {
+                    success = true;
+                    break;
+                  }
+                } catch (portErr) {
+                  // Try next port
+                  continue;
+                }
+              }
+              if (!success) {
+                console.error(`Failed to load metrics for server ${server.id} on any port`);
+                continue;
+              }
+            } else if (server.auth_type !== 'password') {
+              // For key-based auth, try without password
+              metricsResponse = await fetchServerMetrics(server.id);
+            } else {
+              // Skip if password auth but not localhost
+              console.error(`Skipping server ${server.id}: password auth requires localhost`);
+              continue;
+            }
+            
+            if (metricsResponse && metricsResponse.data) {
+              serverData.push({
+                ...server,
+                metrics: metricsResponse.data,
+              });
+            }
           } catch (err) {
             console.error(`Failed to load metrics for server ${server.id}:`, err);
           }
@@ -81,12 +115,47 @@ export default function Reports() {
         // Download specific server
         const server = servers.find((s) => s.id === parseInt(selectedServer));
         if (server) {
-          const metricsResponse = await fetchServerMetrics(server.id);
-          serverData.push({
-            ...server,
-            metrics: metricsResponse.data,
-          });
+          // For password auth localhost servers, try different ports
+          let metricsResponse;
+          if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
+            // Try port 2222 first (first server), then 2223 (second server)
+            const ports = [2222, 2223];
+            let success = false;
+            for (const port of ports) {
+              try {
+                metricsResponse = await fetchServerMetrics(server.id, 'testpass123', port);
+                if (metricsResponse && metricsResponse.data) {
+                  success = true;
+                  break;
+                }
+              } catch (portErr) {
+                // Try next port
+                continue;
+              }
+            }
+            if (!success) {
+              throw new Error(`Failed to load metrics for server ${server.id} on any port`);
+            }
+          } else if (server.auth_type !== 'password') {
+            // For key-based auth, try without password
+            metricsResponse = await fetchServerMetrics(server.id);
+          } else {
+            throw new Error("Password authentication requires localhost");
+          }
+          
+          if (metricsResponse && metricsResponse.data) {
+            serverData.push({
+              ...server,
+              metrics: metricsResponse.data,
+            });
+          }
         }
+      }
+
+      // Check if we have any data
+      if (serverData.length === 0) {
+        setError("No server data available to download. Make sure servers are accessible and metrics can be fetched.");
+        return;
       }
 
       // Generate and download file
@@ -94,6 +163,8 @@ export default function Reports() {
         downloadCSV(serverData);
       } else if (reportType === "json") {
         downloadJSON(serverData);
+      } else if (reportType === "pdf") {
+        downloadPDF(serverData);
       }
     } catch (err: any) {
       setError("Failed to generate report: " + (err.message || "Unknown error"));
@@ -172,6 +243,105 @@ export default function Reports() {
     document.body.removeChild(link);
   };
 
+  const downloadPDF = (data: any[]) => {
+    const doc = new jsPDF();
+    const date = new Date().toISOString().split("T")[0];
+    
+    // Title
+    doc.setFontSize(20);
+    doc.text("Server Monitoring Report", 14, 20);
+    
+    // Date and summary
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Total Servers: ${data.length}`, 14, 36);
+    
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    
+    // Prepare table data
+    const tableData = data.map((server) => [
+      server.id.toString(),
+      server.name || server.hostname,
+      server.hostname,
+      server.ip,
+      server.os_type,
+      server.status || "unknown",
+      server.metrics?.cpu?.usage_percent?.toFixed(2) + "%" || "N/A",
+      server.metrics?.memory?.usage_percent?.toFixed(2) + "%" || "N/A",
+      server.metrics?.disk?.usage_percent?.toFixed(2) + "%" || "N/A",
+      server.metrics?.network?.bytes_sent
+        ? (server.metrics.network.bytes_sent / 1024 / 1024).toFixed(2) + " MB"
+        : "N/A",
+      server.metrics?.network?.bytes_recv
+        ? (server.metrics.network.bytes_recv / 1024 / 1024).toFixed(2) + " MB"
+        : "N/A",
+    ]);
+
+    // Add table
+    autoTable(doc, {
+      head: [
+        [
+          "ID",
+          "Name",
+          "Hostname",
+          "IP Address",
+          "OS Type",
+          "Status",
+          "CPU %",
+          "Memory %",
+          "Disk %",
+          "Network Sent",
+          "Network Recv",
+        ],
+      ],
+      body: tableData,
+      startY: 45,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [66, 139, 202], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      columnStyles: {
+        0: { cellWidth: 15 }, // ID
+        1: { cellWidth: 30 }, // Name
+        2: { cellWidth: 30 }, // Hostname
+        3: { cellWidth: 25 }, // IP
+        4: { cellWidth: 20 }, // OS Type
+        5: { cellWidth: 20 }, // Status
+        6: { cellWidth: 18 }, // CPU
+        7: { cellWidth: 20 }, // Memory
+        8: { cellWidth: 18 }, // Disk
+        9: { cellWidth: 25 }, // Network Sent
+        10: { cellWidth: 25 }, // Network Recv
+      },
+    });
+
+    // Add summary statistics
+    const finalY = (doc as any).lastAutoTable.finalY || 100;
+    let yPos = finalY + 15;
+    
+    doc.setFontSize(14);
+    doc.text("Summary Statistics", 14, yPos);
+    yPos += 8;
+    
+    doc.setFontSize(10);
+    const avgCpu = data.reduce((sum, s) => sum + (s.metrics?.cpu?.usage_percent || 0), 0) / data.length;
+    const avgMemory = data.reduce((sum, s) => sum + (s.metrics?.memory?.usage_percent || 0), 0) / data.length;
+    const avgDisk = data.reduce((sum, s) => sum + (s.metrics?.disk?.usage_percent || 0), 0) / data.length;
+    const onlineCount = data.filter((s) => s.status === "online").length;
+    
+    doc.text(`Average CPU Usage: ${avgCpu.toFixed(2)}%`, 14, yPos);
+    yPos += 6;
+    doc.text(`Average Memory Usage: ${avgMemory.toFixed(2)}%`, 14, yPos);
+    yPos += 6;
+    doc.text(`Average Disk Usage: ${avgDisk.toFixed(2)}%`, 14, yPos);
+    yPos += 6;
+    doc.text(`Online Servers: ${onlineCount} / ${data.length}`, 14, yPos);
+    
+    // Save PDF
+    doc.save(`server_report_${date}.pdf`);
+  };
+
   if (loading && servers.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
@@ -241,6 +411,12 @@ export default function Reports() {
                     <Box display="flex" alignItems="center">
                       <InsertDriveFile sx={{ mr: 1, fontSize: 20 }} />
                       JSON (JavaScript Object Notation)
+                    </Box>
+                  </MenuItem>
+                  <MenuItem value="pdf">
+                    <Box display="flex" alignItems="center">
+                      <PictureAsPdf sx={{ mr: 1, fontSize: 20 }} />
+                      PDF (Portable Document Format)
                     </Box>
                   </MenuItem>
                 </Select>

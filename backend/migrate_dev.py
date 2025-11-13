@@ -25,6 +25,22 @@ def run():
         add_column_if_missing(engine, "servers", "status", "VARCHAR(64)")
         add_column_if_missing(engine, "servers", "last_seen", "DATETIME")
         add_column_if_missing(engine, "servers", "notes", "TEXT")
+        
+        # Add is_demo column for distinguishing demo vs live servers
+        column_added = not column_exists(engine, "servers", "is_demo")
+        add_column_if_missing(engine, "servers", "is_demo", "BOOLEAN DEFAULT 0")
+        
+        # If column was just added, set existing servers (IDs 1-11) to is_demo=True
+        # and keep new servers (ID 12+) as is_demo=False
+        if column_added:
+            with engine.connect() as conn:
+                # Set existing servers (IDs 1-11) to is_demo=True
+                conn.execute(text("UPDATE servers SET is_demo = 1 WHERE id <= 11"))
+                # Ensure new servers (ID 12+) are is_demo=False
+                conn.execute(text("UPDATE servers SET is_demo = 0 WHERE id > 11"))
+                conn.commit()
+            print("Added is_demo column and updated existing servers.")
+        
         print("Migration completed (or already up-to-date).")
 
 

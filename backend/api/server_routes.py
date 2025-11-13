@@ -9,6 +9,13 @@ from ..handlers.linux_handler import (
     create_user as linux_create_user,
     list_users as linux_list_users,
     delete_user as linux_delete_user,
+    test_connection as linux_test_connection,
+    get_detailed_metrics as linux_detailed_metrics,
+    execute_command as linux_execute_command,
+    restart_service as linux_restart_service,
+    start_service as linux_start_service,
+    stop_service as linux_stop_service,
+    run_health_check as linux_health_check,
 )
 from ..handlers.windows_handler import (
     get_basic_metrics as windows_metrics,
@@ -65,6 +72,9 @@ def register_server():
     if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields"}), 400
 
+    # Determine if this is a demo or live server based on the request mode
+    is_demo = _is_demo_mode()
+
     server = Server(
         hostname=data["hostname"],
         name=data.get("name"),
@@ -74,6 +84,7 @@ def register_server():
         auth_type=data.get("auth_type"),
         key_path=data.get("key_path"),
         notes=data.get("notes"),
+        is_demo=is_demo,
     )
     db.session.add(server)
     db.session.commit()
@@ -86,9 +97,9 @@ def list_servers():
     is_demo = _is_demo_mode()
     mode_header = request.headers.get("X-Data-Mode") or request.headers.get("x-data-mode", "NOT-SET")
     
-    # LIVE MODE - return ONLY real servers from database, NEVER demo data
+    # LIVE MODE - return ONLY live servers from database (is_demo=False), NEVER demo data
     if not is_demo:
-        servers = Server.query.order_by(Server.id.desc()).all()
+        servers = Server.query.filter_by(is_demo=False).order_by(Server.id.desc()).all()
         server_list = [s.to_dict() for s in servers]
         return jsonify(server_list)
     
@@ -119,6 +130,10 @@ def fetch_metrics(server_id: int):
     
     # LIVE MODE - fetch real server and metrics, NEVER demo data
     server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
     
     # Check for legacy mock mode parameter for backward compatibility
     mock_mode = data.get("mock", "false").lower() == "true"
@@ -193,13 +208,29 @@ def fetch_metrics(server_id: int):
     if server.os_type == "linux":
         host = server.ip
         user = server.username
-        key_path = data.get("key_path")
-        if not key_path:
-            return jsonify({"error": "key_path required for linux"}), 400
+        # Support both key-based and password-based auth
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        
+        # Check if we have either key_path or password
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        # Get port (default 22)
+        port = int(data.get("port", 22))
+        
         try:
-            metrics = linux_metrics(host, user, key_path)
+            metrics = linux_metrics(host, user, key_path, password, port)
+            # Update server status and last_seen on successful connection
+            server.status = "online"
+            from datetime import datetime
+            server.last_seen = datetime.utcnow()
+            db.session.commit()
             return jsonify(metrics)
         except Exception as exc:  # noqa: WPS429
+            # Update server status to offline on connection failure
+            server.status = "offline"
+            db.session.commit()
             return jsonify({"error": str(exc)}), 500
     elif server.os_type == "windows":
         host = server.ip
@@ -235,6 +266,10 @@ def list_remote_users(server_id: int):
     
     # LIVE MODE - fetch real server and users, NEVER demo data
     server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
     
     # Check for legacy mock mode parameter for backward compatibility
     mock_mode = data.get("mock", "false").lower() == "true"
@@ -288,10 +323,15 @@ def list_remote_users(server_id: int):
     # Real users (original code)
     if server.os_type == "linux":
         key_path = data.get("key_path") or server.key_path
-        if not key_path:
-            return jsonify({"error": "key_path required for linux"}), 400
+        password = data.get("password")
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        port = int(data.get("port", 22))
+        
         try:
-            out = linux_list_users(server.ip, server.username, key_path)
+            out = linux_list_users(server.ip, server.username, key_path, password, port)
             users = [u for u in out.splitlines() if u.strip()]
             return jsonify({"users": users})
         except Exception as exc:  # noqa: WPS429
@@ -312,7 +352,15 @@ def list_remote_users(server_id: int):
 
 @server_bp.route("/servers/<int:server_id>/users", methods=["POST"])  # add user on remote host
 def add_remote_user(server_id: int):
+    is_demo = _is_demo_mode()
+    if is_demo:
+        return jsonify({"error": "Cannot add users in demo mode"}), 403
+    
     server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
     data = request.get_json(force=True) or {}
     newuser = data.get("newuser")
     newpass = data.get("newpass")
@@ -320,11 +368,16 @@ def add_remote_user(server_id: int):
         return jsonify({"error": "newuser and newpass required"}), 400
 
     if server.os_type == "linux":
-        key_path = data.get("key_path")
-        if not key_path:
-            return jsonify({"error": "key_path required for linux"}), 400
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        port = int(data.get("port", 22))
+        
         try:
-            linux_create_user(server.ip, server.username, key_path, newuser, newpass)
+            linux_create_user(server.ip, server.username, newuser, newpass, key_path, password, port)
             return jsonify({"status": "created"}), 201
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
@@ -345,14 +398,28 @@ def add_remote_user(server_id: int):
 def delete_remote_user(server_id: int, username: str):
     if not _require_admin():
         return jsonify({"error": "unauthorized"}), 401
+    
+    is_demo = _is_demo_mode()
+    if is_demo:
+        return jsonify({"error": "Cannot delete users in demo mode"}), 403
+    
     server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
     data = request.get_json(silent=True) or {}
     if server.os_type == "linux":
         key_path = data.get("key_path") or server.key_path
-        if not key_path:
-            return jsonify({"error": "key_path required for linux"}), 400
+        password = data.get("password")
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        port = int(data.get("port", 22))
+        
         try:
-            linux_delete_user(server.ip, server.username, key_path, username)
+            linux_delete_user(server.ip, server.username, username, key_path, password, port)
             return jsonify({"status": "deleted"})
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
@@ -367,6 +434,331 @@ def delete_remote_user(server_id: int, username: str):
             return jsonify({"error": str(exc)}), 500
     else:
         return jsonify({"error": "Unsupported os_type"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/test-connection", methods=["POST"])
+def test_server_connection(server_id: int):
+    """Test SSH connection to a server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"success": True, "message": "Demo mode - connection test skipped"}), 200
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    data = request.get_json(silent=True) or {}
+    
+    if server.os_type != "linux":
+        return jsonify({"error": "Connection testing currently only supported for Linux servers"}), 400
+    
+    # Get authentication credentials
+    key_path = data.get("key_path") or server.key_path
+    password = data.get("password")
+    
+    if not key_path and not password:
+        return jsonify({"error": "key_path or password required"}), 400
+    
+    port = int(data.get("port", 22))
+    
+    try:
+        success, message = linux_test_connection(server.ip, server.username, key_path, password, port)
+        
+        # Update server status based on connection test result
+        from datetime import datetime
+        if success:
+            server.status = "online"
+            server.last_seen = datetime.utcnow()
+        else:
+            server.status = "offline"
+        
+        db.session.commit()
+        
+        return jsonify({
+            "success": success,
+            "message": message,
+            "status": server.status
+        }), 200 if success else 500
+    except Exception as exc:
+        server.status = "offline"
+        db.session.commit()
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@server_bp.route("/servers/<int:server_id>/status", methods=["PATCH"])
+def update_server_status(server_id: int):
+    """Manually update server status"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Cannot update status in demo mode"}), 400
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    data = request.get_json(silent=True) or {}
+    
+    new_status = data.get("status")
+    if new_status not in ["online", "offline", "warning"]:
+        return jsonify({"error": "Invalid status. Must be 'online', 'offline', or 'warning'"}), 400
+    
+    server.status = new_status
+    if new_status == "online":
+        from datetime import datetime
+        server.last_seen = datetime.utcnow()
+    
+    db.session.commit()
+    
+    return jsonify({
+        "id": server.id,
+        "status": server.status,
+        "last_seen": server.last_seen.isoformat() + "Z" if server.last_seen else None
+    }), 200
+
+
+@server_bp.route("/servers/<int:server_id>/detailed-metrics", methods=["GET"])
+def get_detailed_metrics(server_id: int):
+    """Get detailed metrics including top processes, network interfaces, disk partitions, and system info"""
+    is_demo = _is_demo_mode()
+    
+    # DEMO MODE - return demo detailed metrics
+    if is_demo:
+        from ..demo_data.servers import get_demo_server_by_id
+        demo_server = get_demo_server_by_id(server_id)
+        if not demo_server:
+            return jsonify({"error": "Server not found"}), 404
+        # Return mock detailed metrics for demo
+        return jsonify({
+            "top_processes": [
+                {"pid": 1234, "name": "nginx", "cpu": 5.2, "memory": 2.1, "user": "www-data"},
+                {"pid": 5678, "name": "mysql", "cpu": 3.1, "memory": 8.5, "user": "mysql"}
+            ],
+            "network_interfaces": [
+                {"name": "eth0", "ip": "192.168.1.100", "rx_bytes": 1000000, "tx_bytes": 2000000, "rx_packets": 1000, "tx_packets": 2000}
+            ],
+            "disk_partitions": [
+                {"filesystem": "/dev/sda1", "total_gb": 100, "used_gb": 50, "available_gb": 50, "usage_percent": 50, "mount": "/"}
+            ],
+            "system_info": {
+                "os": "Ubuntu 22.04 LTS",
+                "kernel": "5.15.0",
+                "hostname": demo_server.get("hostname", "demo-server"),
+                "uptime_days": 10
+            }
+        })
+    
+    # LIVE MODE - fetch real detailed metrics
+    server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    if server.os_type == "linux":
+        data = request.get_json(silent=True) or {}
+        if not data:
+            data = request.args.to_dict()
+        
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            detailed_metrics = linux_detailed_metrics(server.ip, server.username, key_path, password, port)
+            return jsonify(detailed_metrics)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Detailed metrics only supported for Linux servers"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/execute-command", methods=["POST"])
+def execute_server_command(server_id: int):
+    """Execute a custom command on the server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Command execution not available in demo mode"}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    data = request.get_json(force=True)
+    command = data.get("command")
+    
+    if not command:
+        return jsonify({"error": "command is required"}), 400
+    
+    if server.os_type == "linux":
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            result = linux_execute_command(server.ip, server.username, command, key_path, password, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Command execution only supported for Linux servers"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/quick-actions/restart-service", methods=["POST"])
+def restart_server_service(server_id: int):
+    """Restart a systemd service on the server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Service restart not available in demo mode"}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    data = request.get_json(force=True)
+    service_name = data.get("service_name")
+    
+    if not service_name:
+        return jsonify({"error": "service_name is required"}), 400
+    
+    if server.os_type == "linux":
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            result = linux_restart_service(server.ip, server.username, service_name, key_path, password, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Service restart only supported for Linux servers"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/quick-actions/start-service", methods=["POST"])
+def start_server_service(server_id: int):
+    """Start a systemd service on the server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Service start not available in demo mode"}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    data = request.get_json(force=True)
+    service_name = data.get("service_name")
+    
+    if not service_name:
+        return jsonify({"error": "service_name is required"}), 400
+    
+    if server.os_type == "linux":
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            result = linux_start_service(server.ip, server.username, service_name, key_path, password, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Service start only supported for Linux servers"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/quick-actions/stop-service", methods=["POST"])
+def stop_server_service(server_id: int):
+    """Stop a systemd service on the server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Service stop not available in demo mode"}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    data = request.get_json(force=True)
+    service_name = data.get("service_name")
+    
+    if not service_name:
+        return jsonify({"error": "service_name is required"}), 400
+    
+    if server.os_type == "linux":
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            result = linux_stop_service(server.ip, server.username, service_name, key_path, password, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Service stop only supported for Linux servers"}), 400
+
+
+@server_bp.route("/servers/<int:server_id>/quick-actions/health-check", methods=["POST"])
+def run_server_health_check(server_id: int):
+    """Run system health checks on the server"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({
+            "disk": {"status": "ok", "usage_percent": 45, "message": "Disk usage: 45%"},
+            "memory": {"status": "ok", "usage_percent": 60, "message": "Memory usage: 60%"},
+            "load": {"status": "ok", "load_average": 0.5, "cores": 4, "message": "Load average: 0.5 (cores: 4)"}
+        })
+    
+    server = Server.query.get_or_404(server_id)
+    
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    if server.os_type == "linux":
+        data = request.get_json(silent=True) or {}
+        if not data:
+            data = request.args.to_dict()
+        
+        key_path = data.get("key_path") or server.key_path
+        password = data.get("password")
+        port = int(data.get("port", 22))
+        
+        if not key_path and not password:
+            return jsonify({"error": "key_path or password required for linux"}), 400
+        
+        try:
+            health_checks = linux_health_check(server.ip, server.username, key_path, password, port)
+            return jsonify(health_checks)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Health check only supported for Linux servers"}), 400
 
 
 # VM control via VBoxManage

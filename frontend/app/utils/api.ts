@@ -27,11 +27,10 @@ apiClient.interceptors.request.use(
     const mode = getDataMode();
     
     // CRITICAL: Force set the header - make sure it's always set
-    if (config.headers) {
-      config.headers['X-Data-Mode'] = mode;
-    } else {
-      config.headers = { 'X-Data-Mode': mode };
+    if (!config.headers) {
+      config.headers = {} as any;
     }
+    config.headers['X-Data-Mode'] = mode;
     
     // Debug logging (only in development)
     if (process.env.NODE_ENV === 'development') {
@@ -87,7 +86,20 @@ export const api = {
     get: (id: number) => apiClient.get(`/servers/${id}`),
     register: (data: any) => apiClient.post('/servers', data),
     delete: (id: number) => apiClient.delete(`/servers/${id}`),
-    getMetrics: (id: number) => apiClient.get(`/servers/${id}/metrics`),
+    getMetrics: (id: number, params?: { password?: string; port?: number }) => 
+      apiClient.get(`/servers/${id}/metrics`, { params: params || {} }),
+    getDetailedMetrics: (id: number, params?: { password?: string; port?: number }) =>
+      apiClient.get(`/servers/${id}/detailed-metrics`, { params: params || {} }),
+    executeCommand: (id: number, command: string, params?: { password?: string; port?: number }) =>
+      apiClient.post(`/servers/${id}/execute-command`, { command, ...params }),
+    restartService: (id: number, serviceName: string, params?: { password?: string; port?: number }) =>
+      apiClient.post(`/servers/${id}/quick-actions/restart-service`, { service_name: serviceName, ...params }),
+    startService: (id: number, serviceName: string, params?: { password?: string; port?: number }) =>
+      apiClient.post(`/servers/${id}/quick-actions/start-service`, { service_name: serviceName, ...params }),
+    stopService: (id: number, serviceName: string, params?: { password?: string; port?: number }) =>
+      apiClient.post(`/servers/${id}/quick-actions/stop-service`, { service_name: serviceName, ...params }),
+    healthCheck: (id: number, params?: { password?: string; port?: number }) =>
+      apiClient.post(`/servers/${id}/quick-actions/health-check`, params || {}),
   },
   
   // User management endpoints
