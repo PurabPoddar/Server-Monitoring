@@ -25,12 +25,23 @@ apiClient.interceptors.request.use(
   (config) => {
     // Add data mode header to all requests
     const mode = getDataMode();
-    config.headers['X-Data-Mode'] = mode;
+    
+    // CRITICAL: Force set the header - make sure it's always set
+    if (config.headers) {
+      config.headers['X-Data-Mode'] = mode;
+    } else {
+      config.headers = { 'X-Data-Mode': mode };
+    }
+    
+    // Debug logging (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[API] ${config.method?.toUpperCase()} ${config.url} - Mode: ${mode}`);
+    }
     
     // Add auth token if available
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('authToken');
-      if (token) {
+      if (token && config.headers) {
         config.headers['Authorization'] = `Bearer ${token}`;
       }
     }

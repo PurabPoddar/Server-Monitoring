@@ -41,6 +41,7 @@ import {
   Storage as HardDrive,
 } from "@mui/icons-material";
 import { fetchServers, fetchServerMetrics } from "./api";
+import { isDemoMode } from "../utils/dataMode";
 
 export default function Dashboard() {
   const [servers, setServers] = useState<any[]>([]);
@@ -90,8 +91,13 @@ export default function Dashboard() {
     return { color: 'error', icon: <Warning />, text: 'Critical' };
   };
 
-  // Generate mock historical data for charts
+  // Generate mock historical data for charts (only in Demo Mode)
   const generateHistoricalData = () => {
+    // Only generate historical data if we have servers and metrics
+    if (Object.keys(metrics).length === 0) {
+      return [];
+    }
+    
     const hours = Array.from({ length: 24 }, (_, i) => i);
     return hours.map(hour => ({
       hour: `${hour}:00`,
@@ -102,6 +108,7 @@ export default function Dashboard() {
   };
 
   const historicalData = generateHistoricalData();
+  const hasData = servers.length > 0 && Object.keys(metrics).length > 0;
 
   // Custom Chart Component
   const MetricChart = ({ data, title, color, icon }: any) => (
@@ -258,7 +265,7 @@ export default function Dashboard() {
         </Card>
       </Box>
 
-      </Box>
+      {/* Professional Charts Section - Only show when we have data */}
       {hasData ? (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
           <MetricChart
@@ -305,8 +312,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
-
-      {/* System Health Overview */}
 
       {/* System Health Overview */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>

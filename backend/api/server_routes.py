@@ -33,31 +33,28 @@ def _require_admin():
 
 
 def _is_demo_mode():
-    """Check if the request is in demo mode"""
-    # Check header first (most reliable)
-    mode = request.headers.get("X-Data-Mode", "").lower()
-    if mode == "demo":
-        return True
-    if mode == "live":
-        return False
+    """Check if the request is in demo mode - returns True for demo, False for live"""
+    # Check header first (case-insensitive)
+    mode_header = request.headers.get("X-Data-Mode") or request.headers.get("x-data-mode", "")
+    mode_header = mode_header.strip().lower() if mode_header else ""
     
     # Check query param
-    mode = request.args.get("mode", "").lower()
-    if mode == "demo":
-        return True
-    if mode == "live":
-        return False
+    mode_query = request.args.get("mode", "").strip().lower()
     
-    # Check body
-    data = request.get_json(silent=True) or {}
-    mode = data.get("mode", "").lower()
-    if mode == "demo":
-        return True
-    if mode == "live":
-        return False
+    # Check body (for POST requests)
+    mode_body = ""
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        mode_body = str(data.get("mode", "")).strip().lower()
     
-    # Default to demo mode (safer for initial setup)
-    # This will only happen if no mode is specified at all
+    # Determine mode: "live" takes priority, then "demo", then default to demo
+    if mode_header == "live" or mode_query == "live" or mode_body == "live":
+        return False  # LIVE MODE - return False (not demo)
+    
+    if mode_header == "demo" or mode_query == "demo" or mode_body == "demo":
+        return True  # DEMO MODE - return True (is demo)
+    
+    # Default to demo mode if nothing specified (safer default)
     return True
 
 
@@ -86,40 +83,41 @@ def register_server():
 @server_bp.route("/servers", methods=["GET"])
 def list_servers():
     """List servers - returns demo data in demo mode, real data in live mode"""
-    if _is_demo_mode():
-        # Return demo servers
-        demo_servers = get_demo_servers()
-        # Add metrics to each demo server
-        for server in demo_servers:
-            server['metrics'] = generate_demo_metrics(server)
-        return jsonify(demo_servers)
+    is_demo = _is_demo_mode()
+    mode_header = request.headers.get("X-Data-Mode") or request.headers.get("x-data-mode", "NOT-SET")
     
-    # Live mode - return real servers from database
-    servers = Server.query.order_by(Server.id.desc()).all()
-    return jsonify([s.to_dict() for s in servers])
+    # LIVE MODE - return ONLY real servers from database, NEVER demo data
+    if not is_demo:
+        servers = Server.query.order_by(Server.id.desc()).all()
+        server_list = [s.to_dict() for s in servers]
+        return jsonify(server_list)
+    
+    # DEMO MODE - return ONLY demo servers, NEVER real data
+    demo_servers = get_demo_servers()
+    for server in demo_servers:
+        server['metrics'] = generate_demo_metrics(server)
+    return jsonify(demo_servers)
 
 
 @server_bp.route("/servers/<int:server_id>/metrics", methods=["GET"])  # credentials via query/body
 def fetch_metrics(server_id: int):
     """Fetch metrics for a specific server"""
+    is_demo = _is_demo_mode()
     data = request.get_json(silent=True) or {}
     # Support query params for GET requests
     if not data:
         data = request.args.to_dict()
 
-    # Demo mode - use organized demo data
-    if _is_demo_mode():
-        # Get demo server by ID
+    # DEMO MODE - return ONLY demo metrics
+    if is_demo:
         from ..demo_data.servers import get_demo_server_by_id
         demo_server = get_demo_server_by_id(server_id)
         if not demo_server:
             return jsonify({"error": "Server not found"}), 404
-        
-        # Generate and return demo metrics
         metrics = generate_demo_metrics(demo_server)
         return jsonify(metrics)
     
-    # Live mode - fetch real server and metrics
+    # LIVE MODE - fetch real server and metrics, NEVER demo data
     server = Server.query.get_or_404(server_id)
     
     # Check for legacy mock mode parameter for backward compatibility
@@ -221,23 +219,21 @@ def fetch_metrics(server_id: int):
 @server_bp.route("/servers/<int:server_id>/users", methods=["GET"])  # list users on remote host
 def list_remote_users(server_id: int):
     """List users on a remote server"""
+    is_demo = _is_demo_mode()
     data = request.get_json(silent=True) or {}
     if not data:
         data = request.args.to_dict()
 
-    # Demo mode - use organized demo data
-    if _is_demo_mode():
-        # Get demo server by ID
+    # DEMO MODE - return ONLY demo users
+    if is_demo:
         from ..demo_data.servers import get_demo_server_by_id
         demo_server = get_demo_server_by_id(server_id)
         if not demo_server:
             return jsonify({"error": "Server not found"}), 404
-        
-        # Get demo users for this server
         users = get_demo_users(demo_server)
         return jsonify({"users": users})
     
-    # Live mode - fetch real server
+    # LIVE MODE - fetch real server and users, NEVER demo data
     server = Server.query.get_or_404(server_id)
     
     # Check for legacy mock mode parameter for backward compatibility

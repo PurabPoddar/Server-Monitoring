@@ -9,7 +9,8 @@ from .db import db
 def create_app() -> Flask:
     load_dotenv()
     app = Flask(__name__)
-    CORS(app)
+    # CORS with explicit header support
+    CORS(app, expose_headers=['X-Data-Mode'], allow_headers=['X-Data-Mode', 'Content-Type', 'Authorization'])
 
     database_url = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///portal.db")
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url

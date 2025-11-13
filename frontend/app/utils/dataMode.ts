@@ -14,6 +14,7 @@ export function getDataMode(): DataMode {
   }
   
   const settings = localStorage.getItem('userSettings');
+  
   if (settings) {
     try {
       const parsed = JSON.parse(settings);
@@ -22,7 +23,6 @@ export function getDataMode(): DataMode {
       return 'demo';
     }
   }
-  
   return 'demo';
 }
 
