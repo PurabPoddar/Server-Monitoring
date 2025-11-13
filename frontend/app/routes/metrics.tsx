@@ -91,20 +91,101 @@ export default function Metrics() {
   const [detailedMetricsTab, setDetailedMetricsTab] = useState<{ [id: number]: number }>({});
   const [quickActionsExpanded, setQuickActionsExpanded] = useState<{ [id: number]: boolean }>({});
   const [detailedMetricsExpanded, setDetailedMetricsExpanded] = useState<{ [id: number]: boolean }>({});
+  
+  // Password dialog state
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordServer, setPasswordServer] = useState<any>(null);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordPort, setPasswordPort] = useState("22");
 
-  const loadServerMetrics = async (server: any) => {
+  // Helper to get stored password for a server
+  const getStoredPassword = (serverId: number): string | null => {
+    if (typeof window === 'undefined') return null;
+    const key = `server_password_${serverId}`;
+    return sessionStorage.getItem(key);
+  };
+
+  // Helper to store password for a server
+  const storePassword = (serverId: number, password: string) => {
+    if (typeof window === 'undefined') return;
+    const key = `server_password_${serverId}`;
+    sessionStorage.setItem(key, password);
+  };
+
+  const loadServerMetrics = async (server: any, password?: string, port?: number) => {
     try {
       // For password auth localhost servers, use default password
       if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
         const metricsResponse = await fetchServerMetrics(server.id, 'testpass123', 2222);
         setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
       } else if (server.auth_type !== 'password') {
+        // Key-based authentication - no password needed
         const metricsResponse = await fetchServerMetrics(server.id);
         setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+      } else {
+        // Password-based auth - check for stored password or use provided password
+        const storedPassword = password || getStoredPassword(server.id);
+        const sshPort = port || 22;
+        
+        if (!storedPassword) {
+          // No password available - prompt user
+          setPasswordServer(server);
+          setPasswordDialogOpen(true);
+          setMetrics(prev => ({ 
+            ...prev, 
+            [server.id]: { 
+              error: "Password required",
+              requiresPassword: true 
+            } 
+          }));
+          return;
+        }
+        
+        // Try to fetch metrics with password
+        try {
+          const metricsResponse = await fetchServerMetrics(server.id, storedPassword, sshPort);
+          setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
+        } catch (err: any) {
+          const errorMsg = err?.response?.data?.error || err?.message || 'Unknown error';
+          console.error(`[Metrics] Failed to load metrics for server ${server.id}: ${errorMsg}`);
+          
+          // If authentication failed, clear stored password and prompt again
+          if (errorMsg.includes('password') || errorMsg.includes('authentication') || errorMsg.includes('key_path')) {
+            sessionStorage.removeItem(`server_password_${server.id}`);
+            setPasswordServer(server);
+            setPasswordDialogOpen(true);
+          }
+          
+          setMetrics(prev => ({ 
+            ...prev, 
+            [server.id]: { 
+              error: errorMsg,
+              requiresPassword: true 
+            } 
+          }));
+        }
       }
-    } catch (err) {
-      console.error(`Failed to load metrics for server ${server.id}:`, err);
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error || err?.message || 'Unknown error';
+      console.error(`[Metrics] Failed to load metrics for server ${server.id}: ${errorMsg}`);
     }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (!passwordServer || !passwordInput) return;
+    
+    // Store password for this session
+    storePassword(passwordServer.id, passwordInput);
+    
+    // Close dialog and reload metrics
+    setPasswordDialogOpen(false);
+    const port = parseInt(passwordPort) || 22;
+    loadServerMetrics(passwordServer, passwordInput, port);
+    
+    // Clear form
+    setPasswordInput("");
+    setPasswordPort("22");
+    setPasswordServer(null);
   };
 
   const loadDetailedMetrics = async (server: any) => {
@@ -1505,6 +1586,76 @@ export default function Metrics() {
           </Button>
           <Button onClick={handleStopService} variant="contained" color="error" disabled={!stopServiceInput.trim() || actionLoading}>
             {actionLoading ? <CircularProgress size={20} /> : 'Stop'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Password Dialog */}
+      <Dialog open={passwordDialogOpen} onClose={() => {
+        setPasswordDialogOpen(false);
+        setPasswordInput("");
+        setPasswordPort("22");
+        setPasswordServer(null);
+      }} maxWidth="sm" fullWidth>
+        <DialogTitle>Enter SSH Password</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {passwordServer && (
+                <>Server <strong>{passwordServer.name || passwordServer.hostname}</strong> ({passwordServer.ip}) requires password authentication.</>
+              )}
+              {!passwordServer && "This server requires password authentication."}
+            </Typography>
+            
+            <TextField
+              fullWidth
+              type="number"
+              label="SSH Port"
+              value={passwordPort}
+              onChange={(e) => setPasswordPort(e.target.value)}
+              sx={{ mb: 2 }}
+              helperText="SSH port (default: 22). Port 2222 is typically for Docker/test servers."
+              inputProps={{ min: 1, max: 65535 }}
+              defaultValue="22"
+            />
+            
+            <TextField
+              fullWidth
+              type="password"
+              label="SSH Password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              helperText="Password will be stored in session storage for this browser session"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && passwordInput) {
+                  e.preventDefault();
+                  handlePasswordSubmit();
+                }
+              }}
+            />
+            
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
+                The password will be stored temporarily in your browser's session storage and will be cleared when you close the browser tab.
+              </Typography>
+            </Alert>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setPasswordDialogOpen(false);
+            setPasswordInput("");
+            setPasswordPort("22");
+            setPasswordServer(null);
+          }}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handlePasswordSubmit} 
+            variant="contained" 
+            disabled={!passwordInput.trim()}
+          >
+            Connect
           </Button>
         </DialogActions>
       </Dialog>

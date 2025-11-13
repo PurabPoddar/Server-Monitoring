@@ -41,7 +41,6 @@ import {
   Storage as HardDrive,
 } from "@mui/icons-material";
 import { fetchServers, fetchServerMetrics } from "./api";
-import { isDemoMode } from "../utils/dataMode";
 
 export default function Dashboard() {
   const [servers, setServers] = useState<any[]>([]);
@@ -59,35 +58,8 @@ export default function Dashboard() {
       // Load metrics for all servers
       for (const server of response.data) {
         try {
-          // For password auth localhost servers, try different ports
-          if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
-            // Try port 2222 first (first server), then 2223 (second server)
-            // We'll try both ports and use whichever works
-            const ports = [2222, 2223];
-            let success = false;
-            for (const port of ports) {
-              try {
-                const metricsResponse = await fetchServerMetrics(server.id, 'testpass123', port);
-                if (metricsResponse && metricsResponse.data) {
-                  setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
-                  success = true;
-                  break;
-                }
-              } catch (portErr) {
-                // Try next port
-                continue;
-              }
-            }
-            if (!success) {
-              console.error(`Failed to load metrics for server ${server.id} on any port`);
-            }
-          } else if (server.auth_type !== 'password') {
-            // For key-based auth, try without password
-            const metricsResponse = await fetchServerMetrics(server.id);
-            if (metricsResponse) {
-              setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
-            }
-          }
+          const metricsResponse = await fetchServerMetrics(server.id);
+          setMetrics(prev => ({ ...prev, [server.id]: metricsResponse.data }));
         } catch (err) {
           console.error(`Failed to load metrics for server ${server.id}:`, err);
         }
@@ -101,7 +73,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadServers();
-    // Removed auto-refresh - users can manually refresh or use polling on metrics page
   }, []);
 
   // Calculate dashboard statistics
@@ -119,13 +90,9 @@ export default function Dashboard() {
     return { color: 'error', icon: <Warning />, text: 'Critical' };
   };
 
-  // Generate mock historical data for charts (only in Demo Mode)
+  // Generate mock historical data for charts
   const generateHistoricalData = () => {
-    // Only generate historical data if we have servers and metrics
-    if (Object.keys(metrics).length === 0) {
-      return [];
-    }
-    
+    if (Object.keys(metrics).length === 0) return [];
     const hours = Array.from({ length: 24 }, (_, i) => i);
     return hours.map(hour => ({
       hour: `${hour}:00`,
@@ -136,7 +103,7 @@ export default function Dashboard() {
   };
 
   const historicalData = generateHistoricalData();
-  const hasData = servers.length > 0 && Object.keys(metrics).length > 0;
+  const hasData = historicalData.length > 0 && Object.keys(metrics).length > 0;
 
   // Custom Chart Component
   const MetricChart = ({ data, title, color, icon }: any) => (
@@ -293,7 +260,6 @@ export default function Dashboard() {
         </Card>
       </Box>
 
-      {/* Professional Charts Section - Only show when we have data */}
       {hasData ? (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>
           <MetricChart
@@ -340,6 +306,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* System Health Overview */}
 
       {/* System Health Overview */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, mb: 4 }}>

@@ -46,7 +46,14 @@ def test_connection(host: str, user: str, key_path: Optional[str] = None, passwo
             return True, "Connection successful"
         return False, "Connection test failed: unexpected response"
     except Exception as e:
-        return False, f"Connection failed: {str(e)}"
+        error_msg = str(e)
+        # Provide more helpful error messages
+        if "Authentication failed" in error_msg or "authentication" in error_msg.lower():
+            return False, f"Authentication failed. Please verify:\n1. Username is correct (current: '{user}')\n2. Password is correct\n3. User account exists on the server"
+        elif "Unable to connect" in error_msg or "Connection refused" in error_msg:
+            return False, f"Connection failed: Unable to connect to {host}:{port}. Check:\n1. Server is running and accessible\n2. SSH service is running on the server\n3. Firewall allows connections on port {port}"
+        else:
+            return False, f"Connection failed: {error_msg}"
 
 
 def get_basic_metrics(host: str, user: str, key_path: Optional[str] = None, password: Optional[str] = None, port: int = 22) -> dict:
