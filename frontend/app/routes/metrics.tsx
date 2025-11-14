@@ -366,13 +366,14 @@ export default function Metrics() {
       
       if (newSet.has(serverId)) {
         // Disable polling - STOP all intervals for this server
-        console.log(`[Polling] Disabling polling for server ${serverId}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Polling] Disabling polling for server ${serverId}`);
+        }
         newSet.delete(serverId);
         pollingEnabledRef.current.delete(serverId);
         
         // Clear ALL intervals for this server (in case multiple were created)
         if (pollingIntervalsRef.current[serverId]) {
-          console.log(`[Polling] Clearing interval for server ${serverId}`);
           clearInterval(pollingIntervalsRef.current[serverId]);
           delete pollingIntervalsRef.current[serverId];
         }
@@ -381,18 +382,18 @@ export default function Metrics() {
         Object.keys(pollingIntervalsRef.current).forEach(key => {
           const id = parseInt(key);
           if (id === serverId && pollingIntervalsRef.current[id]) {
-            console.log(`[Polling] Force clearing interval for server ${serverId}`);
             clearInterval(pollingIntervalsRef.current[id]);
             delete pollingIntervalsRef.current[id];
           }
         });
       } else {
         // Enable polling
-        console.log(`[Polling] Enabling polling for server ${serverId}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Polling] Enabling polling for server ${serverId}`);
+        }
         
         // First, make sure any existing interval is cleared
         if (pollingIntervalsRef.current[serverId]) {
-          console.log(`[Polling] Clearing existing interval before creating new one for server ${serverId}`);
           clearInterval(pollingIntervalsRef.current[serverId]);
           delete pollingIntervalsRef.current[serverId];
         }
@@ -407,7 +408,6 @@ export default function Metrics() {
           const interval = setInterval(() => {
             // Check if polling is still enabled for this server using ref (always current)
             if (!pollingEnabledRef.current.has(serverId)) {
-              console.log(`[Polling] Polling disabled for server ${serverId}, stopping interval`);
               clearInterval(interval);
               delete pollingIntervalsRef.current[serverId];
               return;
@@ -416,12 +416,10 @@ export default function Metrics() {
             // Get fresh server data from ref
             const currentServer = serversRef.current.find(s => s.id === serverId);
             if (currentServer) {
-              console.log(`[Polling] Fetching metrics for server ${serverId}`);
               loadServerMetrics(currentServer);
             }
           }, 5000);
           pollingIntervalsRef.current[serverId] = interval;
-          console.log(`[Polling] Created interval for server ${serverId}`);
         }
       }
       return newSet;

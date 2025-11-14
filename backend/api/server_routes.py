@@ -22,6 +22,13 @@ from ..handlers.windows_handler import (
     create_windows_user,
     list_users as windows_list_users,
     delete_user as windows_delete_user,
+    test_connection as windows_test_connection,
+    get_detailed_metrics as windows_detailed_metrics,
+    execute_command as windows_execute_command,
+    restart_service as windows_restart_service,
+    start_service as windows_start_service,
+    stop_service as windows_stop_service,
+    run_health_check as windows_health_check,
 )
 
 # Import demo data
@@ -65,12 +72,75 @@ def _is_demo_mode():
     return True
 
 
+def _get_windows_credentials(server: Server, data: dict) -> tuple[str, int]:
+    """Helper function to get Windows password and port from request or stored values"""
+    # Try to get password from request, fallback to stored password
+    password = data.get("password")
+    if not password or (isinstance(password, str) and password.strip() == ""):
+        stored_password = server.get_password()
+        if stored_password:
+            password = stored_password
+        else:
+            raise ValueError("password required for windows")
+    
+    # Get port - prioritize stored winrm_port for Windows servers
+    # Only use request port if it's explicitly provided AND it's a valid WinRM port (5985 or 5986)
+    # Ignore SSH port (22) if it's accidentally passed
+    request_port = data.get("port")
+    if request_port:
+        try:
+            request_port = int(request_port)
+            # If it's a valid WinRM port, use it (allows override)
+            if request_port in [5985, 5986]:
+                port = request_port
+            else:
+                # Invalid port for Windows (likely SSH port 22), use stored winrm_port instead
+                port = int(server.winrm_port) if hasattr(server, 'winrm_port') and server.winrm_port else 5985
+        except (ValueError, TypeError):
+            # Invalid port value, use stored winrm_port
+            port = int(server.winrm_port) if hasattr(server, 'winrm_port') and server.winrm_port else 5985
+    else:
+        # No port in request, use stored winrm_port or default
+        port = int(server.winrm_port) if hasattr(server, 'winrm_port') and server.winrm_port else 5985
+    
+    return password, port
+
+
+def _get_linux_credentials(server: Server, data: dict) -> tuple[str | None, str | None, int]:
+    """Helper function to get Linux credentials (password, key_path, port) from request or stored values"""
+    # Get password from request or stored
+    password = data.get("password")
+    if not password or (isinstance(password, str) and password.strip() == ""):
+        stored_password = server.get_password()
+        if stored_password:
+            password = stored_password
+        else:
+            password = None
+    
+    # Get key_path from request or stored
+    key_path = data.get("key_path") or server.key_path
+    
+    # Get port (default to stored ssh_port, then request param, then 22)
+    port = int(data.get("port") or server.ssh_port or 22)
+    
+    # Validate: need either key_path or password
+    if not key_path and not password:
+        raise ValueError("key_path or password required for linux")
+    
+    return password, key_path, port
+
+
 @server_bp.route("/servers", methods=["POST"])
 def register_server():
     data = request.get_json(force=True)
     required = ["hostname", "ip", "os_type", "username"]
-    if not all(k in data for k in required):
-        return jsonify({"error": "Missing required fields"}), 400
+    missing = [k for k in required if k not in data]
+    if missing:
+        return jsonify({
+            "error": "Missing required fields",
+            "missing_fields": missing,
+            "received_fields": list(data.keys())
+        }), 400
 
     # Determine if this is a demo or live server based on the request mode
     is_demo = _is_demo_mode()
@@ -86,9 +156,135 @@ def register_server():
         notes=data.get("notes"),
         is_demo=is_demo,
     )
+    
+    # Get credentials from request (don't save yet - only save after successful test)
+    password = data.get("password")
+    test_port = None
+    
+    # Set default ports
+    if server.os_type == "windows":
+        test_port = int(data.get("winrm_port", 5985))
+        if password:
+            server.auth_type = "password"
+    elif server.os_type == "linux":
+        test_port = int(data.get("port", 22))
+    
+    # Add server to session but don't commit yet
     db.session.add(server)
-    db.session.commit()
-    return jsonify({"id": server.id}), 201
+    
+    # Save credentials BEFORE testing (so they're available even if test fails)
+    # This allows users to test connection later from the Servers page
+    if server.os_type == "windows" and password:
+        server.set_password(password)
+        server.winrm_port = test_port
+    elif server.os_type == "linux":
+        server.ssh_port = test_port
+        if password:
+            server.set_password(password)
+    
+    # Test connection (credentials already saved above)
+    connection_status = None
+    initial_metrics = None
+    if not is_demo:
+        try:
+            if server.os_type == "windows":
+                # Windows requires password
+                if not password:
+                    connection_status = {"success": False, "message": "Password is required for Windows servers"}
+                else:
+                    from ..handlers.windows_handler import test_connection, get_basic_metrics
+                    try:
+                        success, message = test_connection(server.ip, server.username, password, test_port)
+                        connection_status = {"success": success, "message": message}
+                        if success:
+                            # Credentials already saved above, just commit
+                            db.session.commit()
+                            
+                            # Fetch initial metrics
+                            try:
+                                initial_metrics = get_basic_metrics(server.ip, server.username, password, test_port)
+                                server.status = "online"
+                                from datetime import datetime
+                                server.last_seen = datetime.utcnow()
+                                db.session.commit()
+                            except Exception as e:
+                                print(f"Failed to fetch initial metrics: {e}")
+                                connection_status = {"success": True, "message": f"Connection successful but metrics fetch failed: {str(e)}"}
+                    except Exception as conn_err:
+                        # Network/connection errors during test
+                        error_msg = str(conn_err)
+                        if "401" in error_msg or "authentication" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                            connection_status = {"success": False, "message": f"Authentication failed. Please verify username and password are correct."}
+                        elif "connection" in error_msg.lower() or "refused" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower():
+                            connection_status = {"success": False, "message": f"Network error: Unable to connect to {server.ip}:{test_port}. Check:\n1. Server is running and accessible\n2. WinRM service is running (run 'winrm quickconfig' on Windows server)\n3. Firewall allows connections on port {test_port}\n4. Server IP is correct"}
+                        else:
+                            connection_status = {"success": False, "message": f"Connection test failed: {error_msg}"}
+            elif server.os_type == "linux":
+                from ..handlers.linux_handler import test_connection, get_basic_metrics
+                key_path = server.key_path
+                
+                # For Linux, test with provided credentials
+                try:
+                    success, message = test_connection(server.ip, server.username, key_path, password, test_port)
+                    connection_status = {"success": success, "message": message}
+                    if success:
+                        # Credentials already saved above, just commit
+                        db.session.commit()
+                        
+                        # Fetch initial metrics
+                        try:
+                            initial_metrics = get_basic_metrics(server.ip, server.username, key_path, password, test_port)
+                            server.status = "online"
+                            from datetime import datetime
+                            server.last_seen = datetime.utcnow()
+                            db.session.commit()
+                        except Exception as e:
+                            print(f"Failed to fetch initial metrics: {e}")
+                except Exception as conn_err:
+                    connection_status = {"success": False, "message": f"Connection test failed: {str(conn_err)}"}
+        except Exception as e:
+            # Catch-all for any unexpected errors
+            import traceback
+            print(f"Unexpected error during connection test: {e}")
+            print(traceback.format_exc())
+            connection_status = {"success": False, "message": f"Connection test encountered an error: {str(e)}"}
+    
+    # Commit server even if connection test failed (server is still registered)
+    try:
+        db.session.commit()
+    except Exception:
+        pass  # Already committed above if test was successful
+    
+    response_data = {"id": server.id}
+    if connection_status:
+        response_data["connection_test"] = connection_status
+    if initial_metrics:
+        response_data["initial_metrics"] = initial_metrics
+    
+    return jsonify(response_data), 201
+
+
+@server_bp.route("/servers/<int:server_id>", methods=["DELETE"])
+def delete_server(server_id: int):
+    """Delete a server from the database"""
+    is_demo = _is_demo_mode()
+    
+    if is_demo:
+        return jsonify({"error": "Cannot delete servers in demo mode"}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # In live mode, reject demo servers
+    if server.is_demo:
+        return jsonify({"error": "Demo server not accessible in live mode"}), 403
+    
+    try:
+        db.session.delete(server)
+        db.session.commit()
+        return jsonify({"message": "Server deleted successfully", "id": server_id}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete server: {str(e)}"}), 500
 
 
 @server_bp.route("/servers", methods=["GET"])
@@ -114,8 +310,10 @@ def list_servers():
 def fetch_metrics(server_id: int):
     """Fetch metrics for a specific server"""
     is_demo = _is_demo_mode()
+    
+    # Try to get data from JSON body first (some clients send JSON in GET)
     data = request.get_json(silent=True) or {}
-    # Support query params for GET requests
+    # Support query params for GET requests (most common)
     if not data:
         data = request.args.to_dict()
 
@@ -206,21 +404,13 @@ def fetch_metrics(server_id: int):
 
     # Real metrics (original code)
     if server.os_type == "linux":
-        host = server.ip
-        user = server.username
-        # Support both key-based and password-based auth
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        
-        # Check if we have either key_path or password
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
-        
-        # Get port (default 22)
-        port = int(data.get("port", 22))
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
-            metrics = linux_metrics(host, user, key_path, password, port)
+            metrics = linux_metrics(server.ip, server.username, key_path, password, port)
             # Update server status and last_seen on successful connection
             server.status = "online"
             from datetime import datetime
@@ -233,15 +423,43 @@ def fetch_metrics(server_id: int):
             db.session.commit()
             return jsonify({"error": str(exc)}), 500
     elif server.os_type == "windows":
-        host = server.ip
-        username = server.username
-        password = data.get("password")
-        if not password:
-            return jsonify({"error": "password required for windows"}), 400
         try:
-            metrics = windows_metrics(host, username, password)
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            # Provide detailed error message
+            stored_password_available = bool(server.get_password())
+            return jsonify({
+                "error": str(e),
+                "details": {
+                    "message": "Windows servers require a password for WinRM authentication",
+                    "received_data": {
+                        "password_provided": bool(data.get("password")),
+                        "stored_password_available": stored_password_available,
+                        "password_type": type(data.get("password")).__name__ if data.get("password") else "None",
+                        "all_params": list(data.keys()) if data else "No data received",
+                        "request_method": request.method,
+                        "content_type": request.content_type,
+                        "server_id": server_id,
+                        "server_name": server.name or server.hostname,
+                        "has_encrypted_password": bool(server.encrypted_password)
+                    },
+                    "solution": "Stored password exists but decryption failed. Please test connection again to update credentials." if stored_password_available 
+                        else "Include 'password' parameter in request, or test connection during server registration to save credentials"
+                }
+            }), 400
+        
+        try:
+            metrics = windows_metrics(server.ip, server.username, password, port)
+            # Update server status and last_seen on successful connection
+            server.status = "online"
+            from datetime import datetime
+            server.last_seen = datetime.utcnow()
+            db.session.commit()
             return jsonify(metrics)
         except Exception as exc:  # noqa: WPS429
+            # Update server status to offline on connection failure
+            server.status = "offline"
+            db.session.commit()
             return jsonify({"error": str(exc)}), 500
     else:
         return jsonify({"error": "Unsupported os_type"}), 400
@@ -322,13 +540,10 @@ def list_remote_users(server_id: int):
 
     # Real users (original code)
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
-        
-        port = int(data.get("port", 22))
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             out = linux_list_users(server.ip, server.username, key_path, password, port)
@@ -337,12 +552,23 @@ def list_remote_users(server_id: int):
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
     elif server.os_type == "windows":
-        password = data.get("password")
-        if not password:
-            return jsonify({"error": "password required for windows"}), 400
         try:
-            out = windows_list_users(server.ip, server.username, password)
-            users = [u.strip() for u in out.splitlines()[1:] if u.strip()]
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            out = windows_list_users(server.ip, server.username, password, port)
+            # Try to parse JSON first, fallback to text parsing
+            try:
+                import json
+                users_data = json.loads(out)
+                if isinstance(users_data, list):
+                    users = [u.get("Name", "") for u in users_data if u.get("Name")]
+                else:
+                    users = [users_data.get("Name", "")] if users_data.get("Name") else []
+            except:
+                users = [u.strip() for u in out.splitlines()[1:] if u.strip()]
             return jsonify({"users": users})
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
@@ -368,13 +594,10 @@ def add_remote_user(server_id: int):
         return jsonify({"error": "newuser and newpass required"}), 400
 
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
-        
-        port = int(data.get("port", 22))
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             linux_create_user(server.ip, server.username, newuser, newpass, key_path, password, port)
@@ -382,11 +605,13 @@ def add_remote_user(server_id: int):
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
     elif server.os_type == "windows":
-        password = data.get("password")
-        if not password:
-            return jsonify({"error": "password required for windows"}), 400
         try:
-            out = create_windows_user(server.ip, server.username, password, newuser, newpass)
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            out = create_windows_user(server.ip, server.username, password, newuser, newpass, port)
             return jsonify({"status": "created", "output": out}), 201
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
@@ -410,13 +635,10 @@ def delete_remote_user(server_id: int, username: str):
         return jsonify({"error": "Demo server not accessible in live mode"}), 403
     data = request.get_json(silent=True) or {}
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
-        
-        port = int(data.get("port", 22))
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             linux_delete_user(server.ip, server.username, username, key_path, password, port)
@@ -424,11 +646,13 @@ def delete_remote_user(server_id: int, username: str):
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
     elif server.os_type == "windows":
-        password = data.get("password")
-        if not password:
-            return jsonify({"error": "password required for windows"}), 400
         try:
-            windows_delete_user(server.ip, server.username, password, username)
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            windows_delete_user(server.ip, server.username, password, username, port)
             return jsonify({"status": "deleted"})
         except Exception as exc:  # noqa: WPS429
             return jsonify({"error": str(exc)}), 500
@@ -436,9 +660,50 @@ def delete_remote_user(server_id: int, username: str):
         return jsonify({"error": "Unsupported os_type"}), 400
 
 
+@server_bp.route("/test-connection", methods=["POST"])
+def test_connection_direct():
+    """Test connection to a server without requiring server registration (for registration form)"""
+    data = request.get_json(force=True)
+    
+    required = ["ip", "os_type", "username"]
+    if not all(k in data for k in required):
+        return jsonify({"error": "Missing required fields: ip, os_type, username"}), 400
+    
+    ip = data["ip"]
+    os_type = data["os_type"].lower()
+    username = data["username"]
+    
+    try:
+        if os_type == "windows":
+            password = data.get("password")
+            if not password:
+                return jsonify({"success": False, "message": "Password is required for Windows servers"}), 400
+            
+            port = int(data.get("winrm_port", 5985))
+            from ..handlers.windows_handler import test_connection
+            success, message = test_connection(ip, username, password, port)
+            return jsonify({"success": success, "message": message}), 200 if success else 500
+            
+        elif os_type == "linux":
+            key_path = data.get("key_path")
+            password = data.get("password")
+            port = int(data.get("port", 22))
+            
+            if not key_path and not password:
+                return jsonify({"success": False, "message": "key_path or password required for linux"}), 400
+            
+            from ..handlers.linux_handler import test_connection
+            success, message = test_connection(ip, username, key_path, password, port)
+            return jsonify({"success": success, "message": message}), 200 if success else 500
+        else:
+            return jsonify({"success": False, "message": "Unsupported os_type"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Connection test failed: {str(e)}"}), 500
+
+
 @server_bp.route("/servers/<int:server_id>/test-connection", methods=["POST"])
 def test_server_connection(server_id: int):
-    """Test SSH connection to a server"""
+    """Test connection to a server (SSH for Linux, WinRM for Windows)"""
     is_demo = _is_demo_mode()
     
     if is_demo:
@@ -451,40 +716,71 @@ def test_server_connection(server_id: int):
         return jsonify({"error": "Demo server not accessible in live mode"}), 403
     data = request.get_json(silent=True) or {}
     
-    if server.os_type != "linux":
-        return jsonify({"error": "Connection testing currently only supported for Linux servers"}), 400
-    
-    # Get authentication credentials
-    key_path = data.get("key_path") or server.key_path
-    password = data.get("password")
-    
-    if not key_path and not password:
-        return jsonify({"error": "key_path or password required"}), 400
-    
-    port = int(data.get("port", 22))
-    
-    try:
-        success, message = linux_test_connection(server.ip, server.username, key_path, password, port)
+    if server.os_type == "linux":
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
-        # Update server status based on connection test result
-        from datetime import datetime
-        if success:
-            server.status = "online"
-            server.last_seen = datetime.utcnow()
-        else:
+        try:
+            success, message = linux_test_connection(server.ip, server.username, key_path, password, port)
+            
+            # Update server status based on connection test result
+            from datetime import datetime
+            if success:
+                server.status = "online"
+                server.last_seen = datetime.utcnow()
+            else:
+                server.status = "offline"
+            
+            db.session.commit()
+            
+            return jsonify({
+                "success": success,
+                "message": message,
+                "status": server.status
+            }), 200 if success else 500
+        except Exception as exc:
             server.status = "offline"
+            db.session.commit()
+            return jsonify({"success": False, "error": str(exc)}), 500
+    elif server.os_type == "windows":
+        # Try to get password from request, fallback to stored password
+        password = data.get("password")
+        if not password or (isinstance(password, str) and password.strip() == ""):
+            stored_password = server.get_password()
+            if stored_password:
+                password = stored_password
+            else:
+                return jsonify({"error": "password required for windows"}), 400
         
-        db.session.commit()
+        # Get port (default to stored winrm_port, then request param, then 5985)
+        port = int(data.get("port") or server.winrm_port or 5985)
         
-        return jsonify({
-            "success": success,
-            "message": message,
-            "status": server.status
-        }), 200 if success else 500
-    except Exception as exc:
-        server.status = "offline"
-        db.session.commit()
-        return jsonify({"success": False, "error": str(exc)}), 500
+        try:
+            success, message = windows_test_connection(server.ip, server.username, password, port)
+            
+            # Update server status based on connection test result
+            from datetime import datetime
+            if success:
+                server.status = "online"
+                server.last_seen = datetime.utcnow()
+            else:
+                server.status = "offline"
+            
+            db.session.commit()
+            
+            return jsonify({
+                "success": success,
+                "message": message,
+                "status": server.status
+            }), 200 if success else 500
+        except Exception as exc:
+            server.status = "offline"
+            db.session.commit()
+            return jsonify({"success": False, "error": str(exc)}), 500
+    else:
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/status", methods=["PATCH"])
@@ -563,20 +859,33 @@ def get_detailed_metrics(server_id: int):
         if not data:
             data = request.args.to_dict()
         
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             detailed_metrics = linux_detailed_metrics(server.ip, server.username, key_path, password, port)
             return jsonify(detailed_metrics)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        data = request.get_json(silent=True) or {}
+        if not data:
+            data = request.args.to_dict()
+        
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            detailed_metrics = windows_detailed_metrics(server.ip, server.username, password, port)
+            return jsonify(detailed_metrics)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Detailed metrics only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/execute-command", methods=["POST"])
@@ -599,25 +908,34 @@ def execute_server_command(server_id: int):
         return jsonify({"error": "command is required"}), 400
     
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             result = linux_execute_command(server.ip, server.username, command, key_path, password, port)
             return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            result = windows_execute_command(server.ip, server.username, password, command, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Command execution only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/quick-actions/restart-service", methods=["POST"])
 def restart_server_service(server_id: int):
-    """Restart a systemd service on the server"""
+    """Restart a service on the server (systemd for Linux, Windows Service for Windows)"""
     is_demo = _is_demo_mode()
     
     if is_demo:
@@ -635,25 +953,34 @@ def restart_server_service(server_id: int):
         return jsonify({"error": "service_name is required"}), 400
     
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             result = linux_restart_service(server.ip, server.username, service_name, key_path, password, port)
             return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            result = windows_restart_service(server.ip, server.username, password, service_name, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Service restart only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/quick-actions/start-service", methods=["POST"])
 def start_server_service(server_id: int):
-    """Start a systemd service on the server"""
+    """Start a service on the server (systemd for Linux, Windows Service for Windows)"""
     is_demo = _is_demo_mode()
     
     if is_demo:
@@ -671,20 +998,29 @@ def start_server_service(server_id: int):
         return jsonify({"error": "service_name is required"}), 400
     
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             result = linux_start_service(server.ip, server.username, service_name, key_path, password, port)
             return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            result = windows_start_service(server.ip, server.username, password, service_name, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Service start only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/quick-actions/stop-service", methods=["POST"])
@@ -707,20 +1043,29 @@ def stop_server_service(server_id: int):
         return jsonify({"error": "service_name is required"}), 400
     
     if server.os_type == "linux":
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             result = linux_stop_service(server.ip, server.username, service_name, key_path, password, port)
             return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            result = windows_stop_service(server.ip, server.username, password, service_name, port)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Service stop only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 @server_bp.route("/servers/<int:server_id>/quick-actions/health-check", methods=["POST"])
@@ -745,20 +1090,33 @@ def run_server_health_check(server_id: int):
         if not data:
             data = request.args.to_dict()
         
-        key_path = data.get("key_path") or server.key_path
-        password = data.get("password")
-        port = int(data.get("port", 22))
-        
-        if not key_path and not password:
-            return jsonify({"error": "key_path or password required for linux"}), 400
+        try:
+            password, key_path, port = _get_linux_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         try:
             health_checks = linux_health_check(server.ip, server.username, key_path, password, port)
             return jsonify(health_checks)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    elif server.os_type == "windows":
+        data = request.get_json(silent=True) or {}
+        if not data:
+            data = request.args.to_dict()
+        
+        try:
+            password, port = _get_windows_credentials(server, data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        
+        try:
+            health_checks = windows_health_check(server.ip, server.username, password, port)
+            return jsonify(health_checks)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
     else:
-        return jsonify({"error": "Health check only supported for Linux servers"}), 400
+        return jsonify({"error": "Unsupported os_type"}), 400
 
 
 # VM control via VBoxManage

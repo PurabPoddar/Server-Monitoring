@@ -70,10 +70,12 @@ export default function Reports() {
         // Download all servers
         for (const server of servers) {
           try {
-            // For password auth localhost servers, try different ports
+            // Try to fetch metrics using stored credentials
+            // Backend will automatically use stored password/port if available
             let metricsResponse;
+            
+            // For localhost test servers with password auth, use default password
             if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
-              // Try port 2222 first (first server), then 2223 (second server)
               const ports = [2222, 2223];
               let success = false;
               for (const port of ports) {
@@ -84,7 +86,6 @@ export default function Reports() {
                     break;
                   }
                 } catch (portErr) {
-                  // Try next port
                   continue;
                 }
               }
@@ -92,33 +93,62 @@ export default function Reports() {
                 console.error(`Failed to load metrics for server ${server.id} on any port`);
                 continue;
               }
-            } else if (server.auth_type !== 'password') {
-              // For key-based auth, try without password
-              metricsResponse = await fetchServerMetrics(server.id);
             } else {
-              // Skip if password auth but not localhost
-              console.error(`Skipping server ${server.id}: password auth requires localhost`);
-              continue;
+              // For all other servers, use stored credentials automatically
+              // Backend will use stored password/port if available
+              try {
+                metricsResponse = await fetchServerMetrics(server.id);
+                
+                // Check if response has error
+                if (metricsResponse?.data?.error) {
+                  console.error(`Server ${server.id} (${server.name || server.hostname}) metrics error:`, metricsResponse.data.error);
+                  // Check if it's a credential issue
+                  if (process.env.NODE_ENV === 'development') {
+                    if (metricsResponse.data.error.toLowerCase().includes('password') || 
+                        metricsResponse.data.error.toLowerCase().includes('credential')) {
+                      console.warn(`Server ${server.id} needs credentials. Has stored password: ${server.has_password}, Has key_path: ${!!server.key_path}`);
+                    }
+                  }
+                  continue;
+                }
+              } catch (err: any) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.error(`Failed to load metrics for server ${server.id} (${server.name || server.hostname}):`, err);
+                }
+                // Continue to next server instead of failing completely
+                continue;
+              }
             }
             
-            if (metricsResponse && metricsResponse.data) {
+            // Only add if we have valid metrics data
+            if (metricsResponse && metricsResponse.data && !metricsResponse.data.error) {
               serverData.push({
                 ...server,
                 metrics: metricsResponse.data,
               });
+            } else if (process.env.NODE_ENV === 'development') {
+              console.warn(`Server ${server.id} (${server.name || server.hostname}) - No valid metrics data:`, {
+                hasResponse: !!metricsResponse,
+                hasData: !!metricsResponse?.data,
+                hasError: !!metricsResponse?.data?.error,
+                error: metricsResponse?.data?.error
+              });
             }
           } catch (err) {
-            console.error(`Failed to load metrics for server ${server.id}:`, err);
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`Failed to load metrics for server ${server.id}:`, err);
+            }
+            // Continue to next server instead of failing completely
           }
         }
       } else {
         // Download specific server
         const server = servers.find((s) => s.id === parseInt(selectedServer));
         if (server) {
-          // For password auth localhost servers, try different ports
           let metricsResponse;
+          
+          // For localhost test servers with password auth, use default password
           if (server.auth_type === 'password' && server.ip === '127.0.0.1') {
-            // Try port 2222 first (first server), then 2223 (second server)
             const ports = [2222, 2223];
             let success = false;
             for (const port of ports) {
@@ -129,32 +159,88 @@ export default function Reports() {
                   break;
                 }
               } catch (portErr) {
-                // Try next port
                 continue;
               }
             }
             if (!success) {
               throw new Error(`Failed to load metrics for server ${server.id} on any port`);
             }
-          } else if (server.auth_type !== 'password') {
-            // For key-based auth, try without password
-            metricsResponse = await fetchServerMetrics(server.id);
           } else {
-            throw new Error("Password authentication requires localhost");
+            // Use stored credentials automatically
+            // Backend will use stored password/port if available
+            try {
+              metricsResponse = await fetchServerMetrics(server.id);
+              
+              // Check if response has error
+              if (metricsResponse?.data?.error) {
+                const errorMsg = metricsResponse.data.error;
+                console.error(`Server ${server.id} metrics error:`, errorMsg);
+                
+                // Provide helpful error message
+                if (errorMsg.toLowerCase().includes('password') || 
+                    errorMsg.toLowerCase().includes('credential')) {
+                  const hasCreds = server.has_password || server.key_path;
+                  throw new Error(
+                    `Failed to load metrics: ${errorMsg}. ` +
+                    `Server ${hasCreds ? 'has' : 'does not have'} stored credentials. ` +
+                    `Please test connection from the Servers page to save/update credentials.`
+                  );
+                } else {
+                  throw new Error(`Failed to load metrics: ${errorMsg}`);
+                }
+              }
+            } catch (err: any) {
+              console.error(`Failed to load metrics for server ${server.id}:`, err);
+              if (err?.response?.data?.error) {
+                throw new Error(`Failed to load metrics: ${err.response.data.error}`);
+              }
+              throw err;
+            }
           }
           
-          if (metricsResponse && metricsResponse.data) {
+          if (metricsResponse && metricsResponse.data && !metricsResponse.data.error) {
             serverData.push({
               ...server,
               metrics: metricsResponse.data,
             });
+          } else {
+            throw new Error(`No valid metrics data received for server ${server.name || server.hostname}`);
           }
         }
       }
 
       // Check if we have any data
       if (serverData.length === 0) {
-        setError("No server data available to download. Make sure servers are accessible and metrics can be fetched.");
+        const totalServers = selectedServer === "all" ? servers.length : 1;
+        if (totalServers === 0) {
+          setError("No servers available. Please register servers first.");
+        } else {
+          // Check if servers have stored credentials
+          const serversWithoutCredentials = servers.filter(s => 
+            !s.has_password && 
+            !s.key_path && 
+            s.os_type !== 'linux' // Linux can work with just key_path
+          );
+          
+          let errorMsg = `No server data available to download. ` +
+            `Tried to fetch metrics from ${totalServers} server(s) but none returned data.\n\n`;
+          
+          if (serversWithoutCredentials.length > 0) {
+            errorMsg += `⚠️ ${serversWithoutCredentials.length} server(s) don't have stored credentials:\n`;
+            serversWithoutCredentials.forEach(s => {
+              errorMsg += `  • ${s.name || s.hostname} (${s.ip}) - ${s.os_type}\n`;
+            });
+            errorMsg += `\nPlease test the connection during registration or from the Servers page to save credentials.`;
+          } else {
+            errorMsg += `Possible issues:\n` +
+              `  • Servers may be offline or unreachable\n` +
+              `  • Network connectivity issues\n` +
+              `  • Credentials may have expired\n\n` +
+              `Try testing connections from the Servers page first.`;
+          }
+          
+          setError(errorMsg);
+        }
         return;
       }
 

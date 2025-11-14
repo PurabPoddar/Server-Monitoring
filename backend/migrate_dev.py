@@ -41,6 +41,15 @@ def run():
                 conn.commit()
             print("Added is_demo column and updated existing servers.")
         
+        # Add encrypted_password column for password storage
+        add_column_if_missing(engine, "servers", "encrypted_password", "TEXT")
+        
+        # Add winrm_port column for Windows servers
+        add_column_if_missing(engine, "servers", "winrm_port", "INTEGER DEFAULT 5985")
+        
+        # Add ssh_port column for Linux servers
+        add_column_if_missing(engine, "servers", "ssh_port", "INTEGER DEFAULT 22")
+        
         print("Migration completed (or already up-to-date).")
 
 

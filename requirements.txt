@@ -6,4 +6,5 @@ paramiko==3.4.0
 pywinrm==0.4.3
 requests-ntlm==1.2.0
 PyJWT==2.8.0
+cryptography==42.0.0
 

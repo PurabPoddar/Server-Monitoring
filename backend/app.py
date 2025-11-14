@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -28,6 +28,11 @@ def create_app() -> Flask:
         app.register_blueprint(auth_bp, url_prefix="/api/auth")
 
         db.create_all()
+        
+        # Add a simple root route
+        @app.route("/")
+        def root():
+            return jsonify({"message": "Server Monitoring API", "version": "1.0", "endpoints": "/api"})
 
     return app
 

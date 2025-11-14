@@ -32,7 +32,7 @@ apiClient.interceptors.request.use(
     }
     config.headers['X-Data-Mode'] = mode;
     
-    // Debug logging (only in development)
+    // Debug logging only in development mode
     if (process.env.NODE_ENV === 'development') {
       console.log(`[API] ${config.method?.toUpperCase()} ${config.url} - Mode: ${mode}`);
     }
@@ -86,8 +86,15 @@ export const api = {
     get: (id: number) => apiClient.get(`/servers/${id}`),
     register: (data: any) => apiClient.post('/servers', data),
     delete: (id: number) => apiClient.delete(`/servers/${id}`),
-    getMetrics: (id: number, params?: { password?: string; port?: number }) => 
-      apiClient.get(`/servers/${id}/metrics`, { params: params || {} }),
+    getMetrics: (id: number, params?: { password?: string; port?: number }) => {
+      // Ensure params is always an object, even if empty
+      const queryParams = params || {};
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[getMetrics] Server ID: ${id}, Params:`, queryParams, 'Has password:', !!queryParams.password);
+      }
+      return apiClient.get(`/servers/${id}/metrics`, { params: queryParams });
+    },
     getDetailedMetrics: (id: number, params?: { password?: string; port?: number }) =>
       apiClient.get(`/servers/${id}/detailed-metrics`, { params: params || {} }),
     executeCommand: (id: number, command: string, params?: { password?: string; port?: number }) =>
